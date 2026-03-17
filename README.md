@@ -1,4 +1,4 @@
-# 🏎 F1 Technical Regulations Assistant
+# F1 Technical Regulations Assistant
  
 An AI assistant for the **FIA 2026 Formula 1 Technical Regulations**, built with:
  
