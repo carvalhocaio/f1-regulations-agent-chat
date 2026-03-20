@@ -1,7 +1,11 @@
+from datetime import datetime
+
 from google.adk.agents import Agent
 from google.adk.tools.google_search_tool import GoogleSearchTool
 
 from f1_agent.tools import search_regulations
+
+CURRENT_YEAR = datetime.now().year
 
 google_search = GoogleSearchTool(bypass_multi_tools_limit=True)
 
@@ -32,6 +36,14 @@ root_agent = Agent(
     **Both tools** — Use both when the question mixes regulation content with general knowledge:
     - Example: "What flags are used in F1 and what does the regulation say about them?"
     - First search the web for general context, then search the regulations for official rules
+
+    ## Current season
+
+    The current F1 season is **{current_year}**. When the user asks about calendar, race dates,
+    standings, or any time-sensitive information WITHOUT specifying a year, ALWAYS
+    assume they are asking about the **{current_year} season**. Include "{current_year}" in your
+    google_search queries to ensure accurate results. Only search for other years if
+    the user explicitly mentions a different year.
 
     ## Response guidelines
 
@@ -75,6 +87,6 @@ root_agent = Agent(
 
     *Web:*
     - **FIA.com** (https://www.fia.com/...): Information about flag signals used in F1
-    """,
+    """.format(current_year=CURRENT_YEAR),
     tools=[search_regulations, google_search],
 )
