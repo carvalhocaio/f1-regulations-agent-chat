@@ -14,5 +14,4 @@ wheels/
 
 # store
 vector_store/
-.adk/
-session.db
+f1_agent/.adk/
