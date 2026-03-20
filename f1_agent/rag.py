@@ -1,8 +1,9 @@
 """
 RAG pipeline using LangChain to index and retrieve
-F1 Technical Regulations from PDF files (2025 and 2026).
+FIA 2026 F1 Regulations from PDF files (Sections A–F).
 """
 
+import re
 from pathlib import Path
 from typing import cast
 
@@ -16,11 +17,6 @@ from pydantic import SecretStr
 DOCS_DIR = Path(__file__).parent.parent / "docs"
 VECTOR_STORE_DIR = Path(__file__).parent.parent / "vector_store"
 
-PDF_FILES: dict[int, str] = {
-    2025: "fia_2025_f1_technical_regulations.pdf",
-    2026: "fia_2026_f1_technical_regulations.pdf",
-}
-
 EMBEDDING_MODEL: str = cast(
     str,
     config(
@@ -29,6 +25,23 @@ EMBEDDING_MODEL: str = cast(
         cast=str,
     ),
 )
+
+SECTION_PATTERN = re.compile(
+    r"section[_ ]+([a-f])[_ \[]+(.+?)[\]_ ]*-[_ ]*iss",
+    re.IGNORECASE,
+)
+
+
+def _extract_section(filename: str) -> str:
+    """Extract a human-readable section label from a PDF filename."""
+    match = SECTION_PATTERN.search(filename)
+    if match:
+        letter = match.group(1).upper()
+        description = match.group(2).strip().replace("_", " ").title()
+        # Clean up extra spaces and dashes
+        description = re.sub(r"\s*-\s*", " — ", description)
+        return f"Section {letter} — {description}"
+    return "Unknown Section"
 
 
 def _get_embeddings() -> GoogleGenerativeAIEmbeddings:
@@ -46,66 +59,61 @@ def _get_embeddings() -> GoogleGenerativeAIEmbeddings:
     )
 
 
-def _vector_store_dir(year: int) -> Path:
-    return VECTOR_STORE_DIR / str(year)
-
-
-def build_vector_store(year: int = 2026) -> FAISS:
-    """Load PDF, split into chunks and build FAISS vector store."""
-    pdf_filename = PDF_FILES.get(year)
-    if not pdf_filename:
-        raise ValueError(f"No PDF mapped for year {year}.")
-
-    pdf_path = DOCS_DIR / pdf_filename
-
-    if not pdf_path.exists():
+def build_vector_store() -> FAISS:
+    """Load all PDF files from docs/, split into chunks and build FAISS vector store."""
+    pdf_files = sorted(DOCS_DIR.glob("*.pdf"))
+    if not pdf_files:
         raise FileNotFoundError(
-            f"PDF not found at {pdf_path}.\n"
-            f"Download the FIA {year} F1 Technical Regulations and place it at:\n"
-            f"  docs/{pdf_filename}"
+            f"No PDF files found in {DOCS_DIR}.\n"
+            "Place the FIA 2026 F1 Regulations PDFs (Sections A–F) in the docs/ directory."
         )
 
-    loader = PyMuPDFLoader(str(pdf_path))
-    documents = loader.load()
-
+    all_chunks = []
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=1_000,
         chunk_overlap=150,
         separators=["\n\n", "\n", ".", " "],
     )
-    chunks = splitter.split_documents(documents)
+
+    for pdf_path in pdf_files:
+        section = _extract_section(pdf_path.name)
+        loader = PyMuPDFLoader(str(pdf_path))
+        documents = loader.load()
+
+        for doc in documents:
+            doc.metadata["section"] = section
+
+        chunks = splitter.split_documents(documents)
+        all_chunks.extend(chunks)
 
     embeddings = _get_embeddings()
-    vector_store = FAISS.from_documents(chunks, embeddings)
+    vector_store = FAISS.from_documents(all_chunks, embeddings)
 
-    store_dir = _vector_store_dir(year)
-    store_dir.mkdir(parents=True, exist_ok=True)
-    vector_store.save_local(str(store_dir))
+    VECTOR_STORE_DIR.mkdir(parents=True, exist_ok=True)
+    vector_store.save_local(str(VECTOR_STORE_DIR))
 
     return vector_store
 
 
-def load_vector_store(year: int = 2026) -> FAISS:
+def load_vector_store() -> FAISS:
     """Load existing vector store from disk."""
     embeddings = _get_embeddings()
-    store_dir = _vector_store_dir(year)
     return FAISS.load_local(
-        str(store_dir),
+        str(VECTOR_STORE_DIR),
         embeddings,
         allow_dangerous_deserialization=True,
     )
 
 
-def get_vector_store(year: int = 2026) -> FAISS:
+def get_vector_store() -> FAISS:
     """Return vector store, building it if it doesn't exist yet."""
-    store_dir = _vector_store_dir(year)
-    if store_dir.exists() and any(store_dir.iterdir()):
-        return load_vector_store(year)
-    return build_vector_store(year)
+    if VECTOR_STORE_DIR.exists() and any(VECTOR_STORE_DIR.iterdir()):
+        return load_vector_store()
+    return build_vector_store()
 
 
-def retrieve_context(query: str, k: int = 5, year: int = 2026) -> str:
+def retrieve_context(query: str, k: int = 5) -> str:
     """Retrieve the most relevant chunks for a given query."""
-    vector_store = get_vector_store(year)
+    vector_store = get_vector_store()
     docs = vector_store.similarity_search(query, k=k)
     return "\n\n---\n\n".join(doc.page_content for doc in docs)
