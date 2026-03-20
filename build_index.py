@@ -11,7 +11,7 @@ console = Console()
 
 
 def main() -> None:
-    from src.rag import build_vector_store
+    from f1_agent.rag import build_vector_store
 
     console.print("[bold]🔧 Building vector store from PDF...[/bold]")
     console.print("[dim]This may take a minute on first run.[/dim]\n")

@@ -1,18 +1,15 @@
 [project]
-name = "f1-regulations-agent"
+name = "f1-regulations-agent-chat"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "langchain>=0.3.0",
-    "langchain-community>=0.3.0",
-    "langchain-google-genai>=2.0.0",
-    "faiss-cpu>=1.9.0",
-    "pymupdf>=1.25.0",
-    "rich>=13.0.0",
-    "langchain-text-splitters>=1.1.1",
-    "pydantic-ai>=1.68.0",
+    "google-adk",
+    "langchain",
+    "langchain-google-genai",
+    "langchain-community",
+    "faiss-cpu",
     "python-decouple>=3.8",
 ]
 
