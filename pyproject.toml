@@ -11,6 +11,8 @@ dependencies = [
     "langchain-community",
     "faiss-cpu",
     "python-decouple>=3.8",
+    "pymupdf>=1.27.2.2",
+    "rich>=14.3.3",
 ]
 
 [project.optional-dependencies]

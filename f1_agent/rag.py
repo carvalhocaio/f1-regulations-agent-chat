@@ -1,6 +1,6 @@
 """
 RAG pipeline using LangChain to index and retrieve
-F1 Technical Regulations from a PDF file.
+F1 Technical Regulations from PDF files (2025 and 2026).
 """
 
 from pathlib import Path
@@ -15,7 +15,12 @@ from pydantic import SecretStr
 
 DOCS_DIR = Path(__file__).parent.parent / "docs"
 VECTOR_STORE_DIR = Path(__file__).parent.parent / "vector_store"
-PDF_FILENAME = "fia_2026_f1_technical_regulations.pdf"
+
+PDF_FILES: dict[int, str] = {
+    2025: "fia_2025_f1_technical_regulations.pdf",
+    2026: "fia_2026_f1_technical_regulations.pdf",
+}
+
 EMBEDDING_MODEL: str = cast(
     str,
     config(
@@ -41,15 +46,23 @@ def _get_embeddings() -> GoogleGenerativeAIEmbeddings:
     )
 
 
-def build_vector_store() -> FAISS:
+def _vector_store_dir(year: int) -> Path:
+    return VECTOR_STORE_DIR / str(year)
+
+
+def build_vector_store(year: int = 2026) -> FAISS:
     """Load PDF, split into chunks and build FAISS vector store."""
-    pdf_path = DOCS_DIR / PDF_FILENAME
+    pdf_filename = PDF_FILES.get(year)
+    if not pdf_filename:
+        raise ValueError(f"No PDF mapped for year {year}.")
+
+    pdf_path = DOCS_DIR / pdf_filename
 
     if not pdf_path.exists():
         raise FileNotFoundError(
             f"PDF not found at {pdf_path}.\n"
-            f"Download the FIA 2026 F1 Technical Regulations and place it at:\n"
-            f"  docs/{PDF_FILENAME}"
+            f"Download the FIA {year} F1 Technical Regulations and place it at:\n"
+            f"  docs/{pdf_filename}"
         )
 
     loader = PyMuPDFLoader(str(pdf_path))
@@ -64,30 +77,35 @@ def build_vector_store() -> FAISS:
 
     embeddings = _get_embeddings()
     vector_store = FAISS.from_documents(chunks, embeddings)
-    vector_store.save_local(str(VECTOR_STORE_DIR))
+
+    store_dir = _vector_store_dir(year)
+    store_dir.mkdir(parents=True, exist_ok=True)
+    vector_store.save_local(str(store_dir))
 
     return vector_store
 
 
-def load_vector_store() -> FAISS:
+def load_vector_store(year: int = 2026) -> FAISS:
     """Load existing vector store from disk."""
     embeddings = _get_embeddings()
+    store_dir = _vector_store_dir(year)
     return FAISS.load_local(
-        str(VECTOR_STORE_DIR),
+        str(store_dir),
         embeddings,
         allow_dangerous_deserialization=True,
     )
 
 
-def get_vector_store() -> FAISS:
+def get_vector_store(year: int = 2026) -> FAISS:
     """Return vector store, building it if it doesn't exist yet."""
-    if VECTOR_STORE_DIR.exists() and any(VECTOR_STORE_DIR.iterdir()):
-        return load_vector_store()
-    return build_vector_store()
+    store_dir = _vector_store_dir(year)
+    if store_dir.exists() and any(store_dir.iterdir()):
+        return load_vector_store(year)
+    return build_vector_store(year)
 
 
-def retrieve_context(query: str, k: int = 5) -> str:
+def retrieve_context(query: str, k: int = 5, year: int = 2026) -> str:
     """Retrieve the most relevant chunks for a given query."""
-    vector_store = get_vector_store()
+    vector_store = get_vector_store(year)
     docs = vector_store.similarity_search(query, k=k)
     return "\n\n---\n\n".join(doc.page_content for doc in docs)

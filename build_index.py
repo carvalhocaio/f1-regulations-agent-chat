@@ -11,17 +11,22 @@ console = Console()
 
 
 def main() -> None:
-    from f1_agent.rag import build_vector_store
+    from f1_agent.rag import PDF_FILES, build_vector_store
 
-    console.print("[bold]🔧 Building vector store from PDF...[/bold]")
+    console.print("[bold]🔧 Building vector stores from PDFs...[/bold]")
     console.print("[dim]This may take a minute on first run.[/dim]\n")
 
-    try:
-        build_vector_store()
-        console.print("[bold green]✅ Vector store built successfully![/bold green]")
-        console.print("[dim]You can now run: python main.py[/dim]")
-    except FileNotFoundError as e:
-        console.print(f"[bold red]❌ {e}[/bold red]")
+    for year in PDF_FILES:
+        try:
+            console.print(f"[bold]📄 Building index for {year} regulations...[/bold]")
+            build_vector_store(year=year)
+            console.print(
+                f"[bold green]✅ {year} vector store built successfully![/bold green]\n"
+            )
+        except FileNotFoundError as e:
+            console.print(f"[bold red]❌ {e}[/bold red]\n")
+
+    console.print("[dim]You can now run: python main.py[/dim]")
 
 
 if __name__ == "__main__":
