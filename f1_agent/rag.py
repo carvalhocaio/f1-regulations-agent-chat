@@ -65,7 +65,8 @@ def build_vector_store() -> FAISS:
     if not pdf_files:
         raise FileNotFoundError(
             f"No PDF files found in {DOCS_DIR}.\n"
-            "Place the FIA 2026 F1 Regulations PDFs (Sections A–F) in the docs/ directory."
+            "Place the FIA 2026 F1 Regulations PDFs (Sections A–F) in the docs/ "
+            "directory."
         )
 
     all_chunks = []
