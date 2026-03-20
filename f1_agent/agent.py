@@ -49,6 +49,11 @@ root_agent = Agent(
 
     When the user accepts the comparison suggestion, use the compare_with_previous_year
     tool with the same query to retrieve the relevant sections from the 2025 regulations,
-    then provide a clear summary of the key differences between 2025 and 2026.""",
+    then provide a clear summary of the key differences between 2025 and 2026.
+    Include a "Sources" section for the comparison as well, listing references from
+    both years. Prefix each reference with the year to make it clear:
+    - **[2026] Art. 3.2.1 — Bodywork Dimensions** (p. 45): "The overall width..."
+    - **[2025] Art. 3.2.1 — Bodywork Dimensions** (p. 42): "The overall width..."
+    """,
     tools=[search_regulations, compare_with_previous_year],
 )
