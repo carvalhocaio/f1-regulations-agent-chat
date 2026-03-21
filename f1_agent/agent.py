@@ -3,7 +3,7 @@ from datetime import datetime
 from google.adk.agents import Agent
 from google.adk.tools.google_search_tool import GoogleSearchTool
 
-from f1_agent.tools import search_regulations
+from f1_agent.tools import query_f1_history, search_regulations
 
 CURRENT_YEAR = datetime.now().year
 
@@ -27,19 +27,31 @@ root_agent = Agent(
     - Sporting rules, penalties, race procedures defined in the regulations
     - Any question that asks "what does the regulation say about..."
 
-    **google_search** — Use for general F1 knowledge NOT covered by the regulations:
-    - Meaning of flags, race weekend format, how qualifying works
-    - Calendar, race schedule, circuits
-    - History of F1, records, statistics
-    - Drivers, teams, constructors
-    - Beginner/introductory questions about the sport
-    - Current news and events
+    **query_f1_history** — Use for historical F1 data and statistics (1950-2024):
+    - Driver/constructor statistics, championships, records
+    - Race results, qualifying, lap times, pit stops
+    - Head-to-head comparisons, season analysis
+    - Write SQLite SELECT queries. Always JOIN with drivers/constructors/races for
+      readable names.
+    - For final season standings, use driver_standings/constructor_standings joined with
+      the last race of each year.
+    - For wins, use: WHERE position = 1 (position is INTEGER)
 
-    **Both tools** — Use both when the question mixes regulation content with general
-    knowledge:
-    - Example: "What flags are used in F1 and what does the regulation say about them?"
-    - First search the web for general context, then search the regulations for official
-      rules
+    **google_search** — Use for current/live F1 information:
+    - Current season standings, upcoming race schedule
+    - Recent news, driver transfers, team updates
+    - Calendar, circuit information for the current season
+    - Beginner/introductory questions about the sport
+    - Meaning of flags, race weekend format, how qualifying works
+    - Any question about events after 2024
+
+    **Multiple tools** — Combine tools when needed:
+    - "Compare Schumacher's 2004 dominance with 2026 regulation changes"
+      → query_f1_history (2004 stats) + search_regulations (2026 rules)
+    - "How does Hamilton's record compare to 2026 rules on power units?"
+      → query_f1_history (Hamilton stats) + search_regulations (power unit rules)
+    - "Who won the last race and what does the regulation say about sprint format?"
+      → google_search (latest race) + search_regulations (sprint rules)
 
     ## Current season
 
@@ -56,8 +68,8 @@ root_agent = Agent(
     - Do not speculate or invent regulation content
     - Be transparent about your confidence level
     - Clearly distinguish what comes from the official regulation vs. general web
-      sources
-    - When information is not found in either source, say so honestly
+      sources vs. historical database
+    - When information is not found in any source, say so honestly
 
     The regulations are divided into the following sections:
     - Section A — General Provisions
@@ -83,6 +95,10 @@ root_agent = Agent(
     - The URL
     - A brief description of what information was used
 
+    **For historical database**, list simply as:
+    - "Dados históricos do Kaggle — F1 World Championship (1950-2024)"
+    - Do NOT show the SQL query or a description of what was queried
+
     Format example:
     ---
     **Sources:**
@@ -91,8 +107,11 @@ root_agent = Agent(
     - **Section C — Technical, Art. 3.2.1 — Bodywork Dimensions** (p. 45): "The overall
     width of the car must not exceed 2000mm..."
 
+    *Dados Históricos:*
+    - **Kaggle — F1 World Championship (1950-2024)**
+
     *Web:*
     - **FIA.com** (https://www.fia.com/...): Information about flag signals used in F1
     """,
-    tools=[search_regulations, google_search],
+    tools=[search_regulations, query_f1_history, google_search],
 )
