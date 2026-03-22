@@ -92,6 +92,20 @@ def query_f1_history(sql_query: str) -> dict:
     - NULL values exist where data is unavailable (e.g., old races without lap times)
     - Results are limited to 100 rows maximum
 
+    IMPORTANT — RACE NAME CHANGES:
+    - Race names have changed over the years! The same circuit/country can have different
+      GP names across eras. Examples:
+      * "São Paulo Grand Prix" (2021+) is the same event as "Brazilian Grand Prix" (1973-2019)
+      * Races may be renamed due to sponsorship or rebranding
+    - NEVER use exact match (= 'name') for race lookups. Instead:
+      * Search by CIRCUIT: JOIN with circuits table and filter by circuits.country or
+        circuits.location (e.g., WHERE c.country = 'Brazil')
+      * Or use LIKE for partial matching (e.g., WHERE races.name LIKE '%Brazil%' OR
+        races.name LIKE '%São Paulo%')
+    - When asked about a GP's history, always search by circuit/country to capture ALL
+      editions regardless of name changes
+    - Similarly for drivers: use LIKE for name searches to handle variations
+
     Args:
         sql_query: A SQLite SELECT query to execute against the F1 historical database.
     """
