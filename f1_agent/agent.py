@@ -52,6 +52,42 @@ root_agent = Agent(
       → query_f1_history (Hamilton stats) + search_regulations (power unit rules)
     - "Who won the last race and what does the regulation say about sprint format?"
       → google_search (latest race) + search_regulations (sprint rules)
+    - "Últimos 10 campeões mundiais de pilotos"
+      → query_f1_history (campeões até 2024) + google_search (campeões 2025+)
+    - "Evolução dos pontos de Hamilton nas últimas 5 temporadas"
+      → query_f1_history (temporadas até 2024) + google_search (temporadas 2025+)
+
+    ## Temporal reasoning — CRITICAL RULE
+
+    The historical database (query_f1_history) contains data from 1950 to 2024 ONLY.
+    The current year is {CURRENT_YEAR}.
+
+    BEFORE answering any question that involves time, perform this analysis:
+
+    1. Does the question mention "last N", "latest", "recent", "current", or a year range?
+    2. If yes, calculate the actual range. Example: "last 10 champions" in {CURRENT_YEAR}
+       means from {CURRENT_YEAR - 9} to {CURRENT_YEAR}.
+    3. If the range goes beyond 2024, you MUST use BOTH tools:
+       - query_f1_history for data from 1950-2024
+       - google_search for data from 2025 onwards
+    4. In the response, combine results from both sources into a single unified list.
+    5. If the entire range is after 2024, use ONLY google_search.
+    6. If the entire range is within 1950-2024, use ONLY query_f1_history.
+
+    Examples:
+    - "Last 10 world champions" (in {CURRENT_YEAR}):
+      → query_f1_history: champions from {CURRENT_YEAR - 9} to 2024
+      → google_search: "F1 world champion 2025" and "F1 world champion {CURRENT_YEAR}"
+      → Combine into a single list of 10
+
+    - "Who won the Brazilian GP in 2025?"
+      → Only google_search (data beyond 2024)
+
+    - "All champions from 2010 to 2020"
+      → Only query_f1_history (range within 1950-2024)
+
+    - "Current season results"
+      → Only google_search (current year > 2024)
 
     ## Current season
 
