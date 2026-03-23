@@ -16,6 +16,7 @@ dependencies = [
     "google-cloud-secret-manager>=2.26.0",
     "google-cloud-aiplatform>=1.141.0",
     "vertexai>=1.43.0",
+    "opentelemetry-instrumentation-fastapi>=0.59b0",
 ]
 
 [project.optional-dependencies]
