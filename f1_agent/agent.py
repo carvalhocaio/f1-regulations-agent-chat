@@ -1,7 +1,9 @@
 from datetime import datetime
 
 from google.adk.agents import Agent
+from google.adk.models.llm_response import LlmResponse
 from google.adk.tools.google_search_tool import GoogleSearchTool
+from google.genai import types
 
 from f1_agent.tools import query_f1_history, search_regulations
 
@@ -9,9 +11,29 @@ CURRENT_YEAR = datetime.now().year
 
 google_search = GoogleSearchTool(bypass_multi_tools_limit=True)
 
+
+def handle_rate_limit(callback_context, llm_request, exception):
+    if "429" in str(exception) or "ResourceExhausted" in type(exception).__name__:
+        return LlmResponse(
+            content=types.Content(
+                role="model",
+                parts=[
+                    types.Part(
+                        text=(
+                            "⏳ Ops! O limite de requisições por minuto foi"
+                            " atingido. Aguarde um momento e refaça sua"
+                            " pergunta!"
+                        )
+                    )
+                ],
+            )
+        )
+    return None
+
+
 root_agent = Agent(
     name="f1_regulations_assistant",
-    model="gemini-2.5-pro",
+    model="gemini-2.5-flash",
     description="""
         An AI assistant for Formula 1, covering both the official FIA 2026 regulations
         and general F1 knowledge.""",
@@ -173,4 +195,5 @@ root_agent = Agent(
     - **FIA.com** (https://www.fia.com/...): Information about flag signals used in F1
     """,
     tools=[search_regulations, query_f1_history, google_search],
+    on_model_error_callback=handle_rate_limit,
 )

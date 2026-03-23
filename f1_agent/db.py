@@ -9,7 +9,14 @@ import sqlite3
 from pathlib import Path
 
 DOCS_DIR = Path(__file__).parent.parent / "docs"
-DB_DIR = Path(__file__).parent.parent / "f1_data"
+# When deployed, f1_data is an installed package in site-packages.
+# Locally, it's a sibling directory of f1_agent.
+try:
+    import f1_data as _f1_data_pkg
+
+    DB_DIR = Path(_f1_data_pkg.__file__).parent
+except ImportError:
+    DB_DIR = Path(__file__).parent.parent / "f1_data"
 DB_PATH = DB_DIR / "f1_history.db"
 
 _connection: sqlite3.Connection | None = None

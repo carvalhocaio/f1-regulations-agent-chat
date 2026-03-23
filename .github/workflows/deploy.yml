@@ -1,0 +1,64 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: ${{ secrets.GCP_REGION }}
+  STAGING_BUCKET: ${{ secrets.GCP_STAGING_BUCKET }}
+  SA_EMAIL: ${{ secrets.GCP_SA_EMAIL }}
+  ARTIFACTS_BUCKET: "${{ secrets.GCP_PROJECT_ID }}-artifacts"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          # Or, with Workload Identity Federation:
+          # workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          # service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Download data artifacts
+        run: |
+          gcloud storage cp -r "gs://$ARTIFACTS_BUCKET/vector_store/" ./vector_store/
+          gcloud storage cp -r "gs://$ARTIFACTS_BUCKET/f1_data/" ./f1_data/
+
+      - name: Generate requirements-deploy.txt
+        run: uv export --no-hashes --no-dev --no-editable -o requirements-deploy.txt
+
+      - name: Deploy to Agent Engine
+        run: |
+          uv run python deployment/deploy.py \
+            --project-id "$PROJECT_ID" \
+            --location "$REGION" \
+            --staging-bucket "$STAGING_BUCKET" \
+            --display-name "f1-agent" \
+            --service-account "$SA_EMAIL"
+
+      - name: Upload deployment metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-metadata
+          path: deployment_metadata.json

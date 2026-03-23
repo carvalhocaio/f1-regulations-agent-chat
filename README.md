@@ -7,7 +7,7 @@ An AI assistant for Formula 1 that combines **official FIA 2026 regulations** (v
 ## Stack
 
 - **[Google ADK](https://google.github.io/adk-docs/)** — Agent Development Kit with built-in web UI
-- **[Gemini 2.5 Pro](https://deepmind.google/technologies/gemini/)** — Google's LLM
+- **[Gemini 2.5 Flash](https://deepmind.google/technologies/gemini/)** — Google's LLM
 - **[LangChain](https://python.langchain.com/)** — RAG pipeline (PDF loading + text splitting)
 - **[FAISS](https://github.com/facebookresearch/faiss)** — Vector similarity search
 - **[SQLite](https://www.sqlite.org/)** — Historical F1 data from [Kaggle](https://www.kaggle.com/datasets/rohanrao/formula-1-world-championship-1950-2020) (~711K rows, 14 tables)
@@ -19,7 +19,7 @@ An AI assistant for Formula 1 that combines **official FIA 2026 regulations** (v
 User question
      |
      v
-Google ADK Agent (Gemini 2.5 Pro)
+Google ADK Agent (Gemini 2.5 Flash)
      |
      |--- Regulation question? ---> search_regulations(query)
      |                                    |
@@ -77,7 +77,7 @@ uv sync
 
 ```bash
 # Create a .env file and add your Google API key
-echo "GOOGLE_API_KEY=your-key-here" > .env
+echo "GEMINI_API_KEY=your-key-here" > .env
 ```
 
 Get your key at: https://aistudio.google.com/app/apikey

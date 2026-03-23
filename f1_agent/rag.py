@@ -15,7 +15,14 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pydantic import SecretStr
 
 DOCS_DIR = Path(__file__).parent.parent / "docs"
-VECTOR_STORE_DIR = Path(__file__).parent.parent / "vector_store"
+# When deployed, vector_store is an installed package in site-packages.
+# Locally, it's a sibling directory of f1_agent.
+try:
+    import vector_store as _vs_pkg
+
+    VECTOR_STORE_DIR = Path(_vs_pkg.__file__).parent
+except ImportError:
+    VECTOR_STORE_DIR = Path(__file__).parent.parent / "vector_store"
 
 EMBEDDING_MODEL: str = cast(
     str,
@@ -45,12 +52,12 @@ def _extract_section(filename: str) -> str:
 
 
 def _get_embeddings() -> GoogleGenerativeAIEmbeddings:
-    api_key: str = cast(str, config("GOOGLE_API_KEY", default="", cast=str))
+    api_key: str = cast(str, config("GEMINI_API_KEY", default="", cast=str))
     if not api_key:
-        api_key = cast(str, config("GEMINI_API_KEY", default="", cast=str))
+        api_key = cast(str, config("GOOGLE_API_KEY", default="", cast=str))
     if not api_key:
         raise ValueError(
-            "API key required. Set GOOGLE_API_KEY or GEMINI_API_KEY in .env."
+            "API key required. Set GEMINI_API_KEY or GOOGLE_API_KEY in .env."
         )
 
     return GoogleGenerativeAIEmbeddings(

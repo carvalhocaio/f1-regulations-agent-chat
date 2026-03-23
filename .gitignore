@@ -14,4 +14,14 @@ wheels/
 
 # store
 vector_store/
+f1_data/
 f1_agent/.adk/
+
+# deploy
+deployment_metadata.json
+requirements-deploy.txt
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+sa-key.json
