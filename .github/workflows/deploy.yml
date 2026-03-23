@@ -42,8 +42,9 @@ jobs:
 
       - name: Download data artifacts
         run: |
-          gcloud storage cp -r "gs://$ARTIFACTS_BUCKET/vector_store/" ./vector_store/
-          gcloud storage cp -r "gs://$ARTIFACTS_BUCKET/f1_data/" ./f1_data/
+          mkdir -p vector_store f1_data
+          gcloud storage cp -r "gs://$ARTIFACTS_BUCKET/vector_store/*" ./vector_store/
+          gcloud storage cp -r "gs://$ARTIFACTS_BUCKET/f1_data/*" ./f1_data/
 
       - name: Generate requirements-deploy.txt
         run: uv export --no-hashes --no-dev --no-editable -o requirements-deploy.txt
