@@ -13,17 +13,18 @@ Built with [Google ADK](https://google.github.io/adk-docs/) and powered by Gemin
 
 - `search_regulations`: semantic retrieval over FIA 2026 Sections A-F
 - `query_f1_history`: read-only SQL access to historical F1 data
-- `google_search`: live web retrieval for current season/news questions
+- `google_search_agent`: live web retrieval for current season/news questions
+- `search` (compatibility alias): guided fallback if the model hallucinates a generic tool name
 - Multi-tool answers when a question spans historical + current + regulations data
 
 The agent is explicitly instructed to split temporal questions across sources:
 - `1950-2024` -> SQLite (`query_f1_history`)
-- `2025+` or current season -> web (`google_search`)
+- `2025+` or current season -> web (`google_search_agent`)
 
 ## Stack
 
 - [Google ADK](https://google.github.io/adk-docs/) - agent framework and local web UI
-- [Gemini 2.5 Flash](https://deepmind.google/technologies/gemini/) - LLM (`gemini-2.5-flash`)
+- [Gemini 2.5 Pro](https://deepmind.google/technologies/gemini/) - LLM (`gemini-2.5-pro`)
 - [LangChain](https://python.langchain.com/) + [PyMuPDF](https://pymupdf.readthedocs.io/) - PDF ingestion and chunking
 - [FAISS](https://github.com/facebookresearch/faiss) - vector similarity search
 - [SQLite](https://www.sqlite.org/) - historical F1 database
@@ -37,7 +38,7 @@ The agent is explicitly instructed to split temporal questions across sources:
 User question
     |
     v
-ADK Agent (gemini-2.5-flash)
+ADK Agent (gemini-2.5-pro)
     |
     |-- Regulations question -----------> search_regulations(query)
     |                                      -> FAISS over FIA PDFs
@@ -45,7 +46,7 @@ ADK Agent (gemini-2.5-flash)
     |-- Historical/statistics ----------> query_f1_history(sql_query)
     |                                      -> SQLite (1950-2024, read-only SELECT)
     |
-    |-- Current/live/time-sensitive ----> google_search(query)
+    |-- Current/live/time-sensitive ----> google_search_agent(request)
     |                                      -> Web results
     |
     v
@@ -144,7 +145,7 @@ Cross-source:
 f1-regulations-agent-chat/
 ├── f1_agent/
 │   ├── agent.py                # ADK agent definition and instructions
-│   ├── tools.py                # search_regulations + query_f1_history
+│   ├── tools.py                # search_regulations + query_f1_history + search(alias)
 │   ├── rag.py                  # PDF loading, chunking, FAISS retrieval
 │   └── db.py                   # SQLite schema/build/query helpers
 ├── docs/                       # FIA PDFs + Kaggle CSV folder (input data)
@@ -186,7 +187,7 @@ The SQLite DB contains 14 tables with the following row counts:
 
 - CI (`.github/workflows/ci.yml`):
   - Runs on PRs to `main`
-  - Executes `uv run ruff check .` and `uv run ruff format --check .`
+  - Executes `uv run ruff check .`, `uv run ruff format --check .`, and unit tests
 - Deploy (`.github/workflows/deploy.yml`):
   - Runs on push to `main` (environment: `production`)
   - Authenticates with GCP

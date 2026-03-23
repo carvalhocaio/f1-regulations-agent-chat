@@ -22,3 +22,6 @@ jobs:
 
       - name: Format check
         run: uv run ruff format --check .
+
+      - name: Unit tests
+        run: uv run python -m unittest discover -s tests -p "test_*.py" -v

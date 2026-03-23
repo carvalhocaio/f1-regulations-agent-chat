@@ -5,15 +5,32 @@ from google.adk.models.llm_response import LlmResponse
 from google.adk.tools.google_search_tool import GoogleSearchTool
 from google.genai import types
 
-from f1_agent.tools import query_f1_history, search_regulations
+from f1_agent.tools import query_f1_history, search, search_regulations
 
 CURRENT_YEAR = datetime.now().year
 
 google_search = GoogleSearchTool(bypass_multi_tools_limit=True)
 
 
-def handle_rate_limit(callback_context, llm_request, exception):
-    if "429" in str(exception) or "ResourceExhausted" in type(exception).__name__:
+def handle_rate_limit(
+    callback_context,
+    llm_request,
+    error=None,
+    exception=None,
+    **_kwargs,
+):
+    err = error or exception
+    if err is None:
+        return None
+
+    err_text = str(err)
+    err_type = type(err).__name__
+
+    if (
+        "429" in err_text
+        or "ResourceExhausted" in err_type
+        or "ResourceExhausted" in err_text
+    ):
         return LlmResponse(
             content=types.Content(
                 role="model",
@@ -28,12 +45,32 @@ def handle_rate_limit(callback_context, llm_request, exception):
                 ],
             )
         )
+
+    if (
+        "503" in err_text
+        or "Service Unavailable" in err_text
+        or "UNAVAILABLE" in err_text
+    ):
+        return LlmResponse(
+            content=types.Content(
+                role="model",
+                parts=[
+                    types.Part(
+                        text=(
+                            "⏳ The model is under high demand right now (503). "
+                            "Please try again in a few moments."
+                        )
+                    )
+                ],
+            )
+        )
+
     return None
 
 
 root_agent = Agent(
     name="f1_regulations_assistant",
-    model="gemini-2.5-flash",
+    model="gemini-2.5-pro",
     description="""
         An AI assistant for Formula 1, covering both the official FIA 2026 regulations
         and general F1 knowledge.""",
@@ -59,7 +96,7 @@ root_agent = Agent(
       the last race of each year.
     - For wins, use: WHERE position = 1 (position is INTEGER)
 
-    **google_search** — Use for current/live F1 information:
+    **google_search_agent** — Use for current/live F1 information:
     - Current season standings, upcoming race schedule
     - Recent news, driver transfers, team updates
     - Calendar, circuit information for the current season
@@ -67,17 +104,36 @@ root_agent = Agent(
     - Meaning of flags, race weekend format, how qualifying works
     - Any question about events after 2024
 
+    **search** (compatibility fallback only):
+    - If called by mistake, it returns an "invalid_tool_alias" response with
+      valid tool names
+    - Never choose this as your intended final data source
+
+    ## Tool calling rules — CRITICAL
+
+    - You may call ONLY these tool names:
+      `search_regulations`, `query_f1_history`, `google_search_agent`, `search`
+    - NEVER invent or shorten tool names (forbidden examples: `lookup`,
+      `web_search`, `google_search`)
+    - Do NOT proactively choose `search` as a first-choice tool.
+    - Use `search` only as a recovery path when it was already called by mistake.
+      If a `search` result contains `status = invalid_tool_alias`, you MUST retry
+      immediately using one valid tool from `valid_tools`.
+    - For web/current information, call `google_search_agent` using `request`.
+    - For regulations, call `search_regulations` using `query`.
+    - For historical DB, call `query_f1_history` using `sql_query`.
+
     **Multiple tools** — Combine tools when needed:
     - "Compare Schumacher's 2004 dominance with 2026 regulation changes"
       → query_f1_history (2004 stats) + search_regulations (2026 rules)
     - "How does Hamilton's record compare to 2026 rules on power units?"
       → query_f1_history (Hamilton stats) + search_regulations (power unit rules)
     - "Who won the last race and what does the regulation say about sprint format?"
-      → google_search (latest race) + search_regulations (sprint rules)
+      → google_search_agent (latest race) + search_regulations (sprint rules)
     - "Últimos 10 campeões mundiais de pilotos"
-      → query_f1_history (campeões até 2024) + google_search (campeões 2025+)
+      → query_f1_history (campeões até 2024) + google_search_agent (campeões 2025+)
     - "Evolução dos pontos de Hamilton nas últimas 5 temporadas"
-      → query_f1_history (temporadas até 2024) + google_search (temporadas 2025+)
+      → query_f1_history (temporadas até 2024) + google_search_agent (temporadas 2025+)
 
     ## Temporal reasoning — CRITICAL RULE
 
@@ -91,33 +147,34 @@ root_agent = Agent(
        means from {CURRENT_YEAR - 9} to {CURRENT_YEAR}.
     3. If the range goes beyond 2024, you MUST use BOTH tools:
        - query_f1_history for data from 1950-2024
-       - google_search for data from 2025 onwards
+       - google_search_agent for data from 2025 onwards
     4. In the response, combine results from both sources into a single unified list.
-    5. If the entire range is after 2024, use ONLY google_search.
+    5. If the entire range is after 2024, use ONLY google_search_agent.
     6. If the entire range is within 1950-2024, use ONLY query_f1_history.
 
     Examples:
     - "Last 10 world champions" (in {CURRENT_YEAR}):
       → query_f1_history: champions from {CURRENT_YEAR - 9} to 2024
-      → google_search: "F1 world champion 2025" and "F1 world champion {CURRENT_YEAR}"
+      → google_search_agent: request = "F1 world champion 2025 and F1 world champion {CURRENT_YEAR}"
       → Combine into a single list of 10
 
     - "Who won the Brazilian GP in 2025?"
-      → Only google_search (data beyond 2024)
+      → Only google_search_agent (data beyond 2024)
 
     - "All champions from 2010 to 2020"
       → Only query_f1_history (range within 1950-2024)
 
     - "Current season results"
-      → Only google_search (current year > 2024)
+      → Only google_search_agent (current year > 2024)
 
     ## Current season
 
     The current F1 season is **{CURRENT_YEAR}**. When the user asks about calendar, race
     dates, standings, or any time-sensitive information WITHOUT specifying a year,
     ALWAYS assume they are asking about the **{CURRENT_YEAR} season**. Include
-    "{CURRENT_YEAR}" in your google_search queries to ensure accurate results. Only
-    search for other years if the user explicitly mentions a different year.
+    "{CURRENT_YEAR}" in your google_search_agent requests to ensure accurate
+    results. Only include other years if the user explicitly mentions a
+    different year.
 
     ## Response guidelines
 
@@ -194,6 +251,6 @@ root_agent = Agent(
     🌐 *Web:*
     - **FIA.com** (https://www.fia.com/...): Information about flag signals used in F1
     """,
-    tools=[search_regulations, query_f1_history, google_search],
+    tools=[search_regulations, query_f1_history, search, google_search],
     on_model_error_callback=handle_rate_limit,
 )

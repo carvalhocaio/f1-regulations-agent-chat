@@ -35,6 +35,39 @@ def search_regulations(query: str) -> dict:
     return {"status": "success", "results": chunks}
 
 
+def search(query: str | None = None, request: str | None = None) -> dict:
+    """Compatibility fallback for hallucinated `search` tool calls.
+
+    This tool exists only to avoid runtime failures when the model tries to call
+    `search` (generic name) instead of one of the explicit tools.
+    """
+    normalized_query = (query or request or "").strip()
+    valid_tools = ["search_regulations", "query_f1_history", "google_search_agent"]
+
+    if not normalized_query:
+        return {
+            "status": "invalid_tool_alias",
+            "message": (
+                "Tool `search` is not a valid data source. Retry with one of the"
+                " valid tools: search_regulations(query),"
+                " query_f1_history(sql_query), or"
+                " google_search_agent(request)."
+            ),
+            "valid_tools": valid_tools,
+        }
+
+    return {
+        "status": "invalid_tool_alias",
+        "message": (
+            "Tool `search` is a compatibility alias only. Retry immediately with"
+            " exactly one valid tool: search_regulations(query),"
+            " query_f1_history(sql_query), or google_search_agent(request)."
+        ),
+        "valid_tools": valid_tools,
+        "suggested_query": normalized_query,
+    }
+
+
 def query_f1_history(sql_query: str) -> dict:
     """Query the Formula 1 World Championship historical database (1950-2024) using SQL.
 
