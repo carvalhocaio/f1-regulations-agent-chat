@@ -109,6 +109,8 @@ gcloud secrets add-iam-policy-binding google-api-key \
   --role roles/secretmanager.secretAccessor
 ```
 
+> If any key was ever committed or exposed in logs/docs, rotate it immediately in the provider console and update Secret Manager with the new value.
+
 ---
 
 ## 2) Generate data artifacts
@@ -179,10 +181,8 @@ The agent is deployed to Agent Engine via the Python SDK using `deployment/deplo
 Agent Engine requires a flat `requirements.txt` (no `pyproject.toml` extras). Generate with:
 
 ```fish
-uv export --no-hashes --no-dev --no-editable --no-annotate -o requirements-deploy.txt
+uv export --frozen --no-hashes --no-dev --no-editable --no-annotate --no-header --no-emit-project -o requirements-deploy.txt
 ```
-
----AIzaSyAC6gsh0zknV6DwkMHpgedmrZXVhBR4DNg
 
 ## 5) Manual deploy (local)
 
@@ -196,7 +196,7 @@ ls vector_store/ f1_data/
 uv sync
 
 # 3. Generate requirements
-uv export --no-hashes --no-dev --no-editable --no-annotate -o requirements-deploy.txt
+uv export --frozen --no-hashes --no-dev --no-editable --no-annotate --no-header --no-emit-project -o requirements-deploy.txt
 
 # 4. Deploy
 uv run python deployment/deploy.py \

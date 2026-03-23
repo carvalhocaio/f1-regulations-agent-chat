@@ -47,7 +47,7 @@ jobs:
           gcloud storage cp -r "gs://$ARTIFACTS_BUCKET/f1_data/*" ./f1_data/
 
       - name: Generate requirements-deploy.txt
-        run: uv export --no-hashes --no-dev --no-editable --no-annotate -o requirements-deploy.txt
+        run: uv export --frozen --no-hashes --no-dev --no-editable --no-annotate --no-header --no-emit-project -o requirements-deploy.txt
 
       - name: Deploy to Agent Engine
         run: |
