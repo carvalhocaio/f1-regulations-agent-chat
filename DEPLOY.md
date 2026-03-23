@@ -179,7 +179,7 @@ The agent is deployed to Agent Engine via the Python SDK using `deployment/deplo
 Agent Engine requires a flat `requirements.txt` (no `pyproject.toml` extras). Generate with:
 
 ```fish
-uv export --no-hashes --no-dev --no-editable -o requirements-deploy.txt
+uv export --no-hashes --no-dev --no-editable --no-annotate -o requirements-deploy.txt
 ```
 
 ---AIzaSyAC6gsh0zknV6DwkMHpgedmrZXVhBR4DNg
@@ -196,7 +196,7 @@ ls vector_store/ f1_data/
 uv sync
 
 # 3. Generate requirements
-uv export --no-hashes --no-dev --no-editable -o requirements-deploy.txt
+uv export --no-hashes --no-dev --no-editable --no-annotate -o requirements-deploy.txt
 
 # 4. Deploy
 uv run python deployment/deploy.py \
