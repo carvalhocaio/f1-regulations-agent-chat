@@ -1,4 +1,4 @@
-Certo# F1 Regulations Agent Chat
+# F1 Regulations Agent Chat
 
 AI assistant for Formula 1 that combines:
 - Official **FIA 2026 regulations** (RAG over PDFs)
