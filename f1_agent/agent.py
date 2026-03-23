@@ -20,9 +20,9 @@ def handle_rate_limit(callback_context, llm_request, exception):
                 parts=[
                     types.Part(
                         text=(
-                            "⏳ Ops! O limite de requisições por minuto foi"
-                            " atingido. Aguarde um momento e refaça sua"
-                            " pergunta!"
+                            "⏳ Oops! The per-minute request limit has"
+                            " been reached. Please wait a moment and try"
+                            " again!"
                         )
                     )
                 ],
