@@ -1,4 +1,4 @@
-# F1 Regulations Agent Chat
+Certo# F1 Regulations Agent Chat
 
 AI assistant for Formula 1 that combines:
 - Official **FIA 2026 regulations** (RAG over PDFs)
@@ -31,6 +31,17 @@ The agent is explicitly instructed to split temporal questions across sources:
 - Google ADK `GoogleSearchTool` - real-time web information
 - Vertex AI Agent Engine (deployment target)
 - Terraform + GitHub Actions (infrastructure and CI/CD)
+
+## Current Status (2026-03-23)
+
+- Runtime LLM model: `gemini-2.5-pro` (`f1_agent/agent.py`, `root_agent.model`)
+- Default embedding model: `models/gemini-embedding-2-preview` (override via `GEMINI_EMBEDDING_MODEL`)
+- Local quality checks:
+  - `uv run ruff check .` -> passed
+  - `uv run python -m unittest discover -s tests -p "test_*.py" -v` -> passed (`10/10` tests)
+- Local generated artifacts available:
+  - `vector_store/index.faiss` and `vector_store/index.pkl`
+  - `f1_data/f1_history.db` (14 tables, historical coverage `1950-2024`)
 
 ## How It Works
 
@@ -86,6 +97,7 @@ GEMINI_API_KEY=your-key-here
 Notes:
 - The app first tries `GEMINI_API_KEY`, then falls back to `GOOGLE_API_KEY`.
 - Get API keys at https://aistudio.google.com/app/apikey
+- LLM model selection is currently configured in code (`f1_agent/agent.py`, `root_agent.model`), not via `.env`.
 
 ### 4. Add source data to `docs/`
 

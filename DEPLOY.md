@@ -315,6 +315,7 @@ print("Deleted:", os.environ["RESOURCE_NAME"])
 
 - **Reserved variables**: Never set `GOOGLE_CLOUD_PROJECT` or `GOOGLE_APPLICATION_CREDENTIALS` as env vars in the deploy. Use `vertexai.init()`.
 - **Region**: Agent Engine must use the same region as the staging bucket.
+- **LLM model version**: Production uses the model configured in `f1_agent/agent.py` (`root_agent.model`, currently `gemini-2.5-pro`). Any model change requires a new deploy.
 - **Scaling**: Adjust `min_instances` and `max_instances` according to demand.
 - **Data artifacts**: If PDFs or CSVs are updated, re-run `build_index.py` locally and upload the new artifacts to the bucket.
 - **Telemetry**: The deploy already enables traces and logs via OpenTelemetry. Access them in the Vertex AI console under **Dashboard** and **Traces**.
