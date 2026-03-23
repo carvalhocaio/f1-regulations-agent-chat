@@ -20,7 +20,10 @@ DOCS_DIR = Path(__file__).parent.parent / "docs"
 try:
     import vector_store as _vs_pkg
 
-    VECTOR_STORE_DIR = Path(_vs_pkg.__file__).parent
+    if _vs_pkg.__file__ is not None:
+        VECTOR_STORE_DIR = Path(_vs_pkg.__file__).parent
+    else:
+        VECTOR_STORE_DIR = Path(_vs_pkg.__path__[0])
 except ImportError:
     VECTOR_STORE_DIR = Path(__file__).parent.parent / "vector_store"
 

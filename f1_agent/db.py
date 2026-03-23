@@ -14,7 +14,11 @@ DOCS_DIR = Path(__file__).parent.parent / "docs"
 try:
     import f1_data as _f1_data_pkg
 
-    DB_DIR = Path(_f1_data_pkg.__file__).parent
+    if _f1_data_pkg.__file__ is not None:
+        DB_DIR = Path(_f1_data_pkg.__file__).parent
+    else:
+        # Namespace package (no __init__.py) — use __path__ instead
+        DB_DIR = Path(_f1_data_pkg.__path__[0])
 except ImportError:
     DB_DIR = Path(__file__).parent.parent / "f1_data"
 DB_PATH = DB_DIR / "f1_history.db"
