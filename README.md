@@ -1,70 +1,66 @@
 # F1 Regulations Agent Chat
 
-An AI assistant for Formula 1 that combines **official FIA 2026 regulations** (via RAG), **historical championship data 1950-2024** (via SQLite), and **real-time information** (via Google Search), powered by [Google ADK](https://google.github.io/adk-docs/).
+AI assistant for Formula 1 that combines:
+- Official **FIA 2026 regulations** (RAG over PDFs)
+- Historical **F1 World Championship data (1950-2024)** in SQLite
+- **Current and time-sensitive** information via Google Search
 
-> Based on [f1-regulations-agent](https://github.com/carvalhocaio/f1-regulations-agent), the original CLI version built with PydanticAI + Rich.
+Built with [Google ADK](https://google.github.io/adk-docs/) and powered by Gemini.
+
+> This project is based on [f1-regulations-agent](https://github.com/carvalhocaio/f1-regulations-agent), the original CLI version.
+
+## Core Capabilities
+
+- `search_regulations`: semantic retrieval over FIA 2026 Sections A-F
+- `query_f1_history`: read-only SQL access to historical F1 data
+- `google_search`: live web retrieval for current season/news questions
+- Multi-tool answers when a question spans historical + current + regulations data
+
+The agent is explicitly instructed to split temporal questions across sources:
+- `1950-2024` -> SQLite (`query_f1_history`)
+- `2025+` or current season -> web (`google_search`)
 
 ## Stack
 
-- **[Google ADK](https://google.github.io/adk-docs/)** — Agent Development Kit with built-in web UI
-- **[Gemini 2.5 Flash](https://deepmind.google/technologies/gemini/)** — Google's LLM
-- **[LangChain](https://python.langchain.com/)** — RAG pipeline (PDF loading + text splitting)
-- **[FAISS](https://github.com/facebookresearch/faiss)** — Vector similarity search
-- **[SQLite](https://www.sqlite.org/)** — Historical F1 data from [Kaggle](https://www.kaggle.com/datasets/rohanrao/formula-1-world-championship-1950-2020) (~711K rows, 14 tables)
-- **[Google Search](https://google.github.io/adk-docs/)** — Real-time web search for current F1 information
+- [Google ADK](https://google.github.io/adk-docs/) - agent framework and local web UI
+- [Gemini 2.5 Flash](https://deepmind.google/technologies/gemini/) - LLM (`gemini-2.5-flash`)
+- [LangChain](https://python.langchain.com/) + [PyMuPDF](https://pymupdf.readthedocs.io/) - PDF ingestion and chunking
+- [FAISS](https://github.com/facebookresearch/faiss) - vector similarity search
+- [SQLite](https://www.sqlite.org/) - historical F1 database
+- Google ADK `GoogleSearchTool` - real-time web information
+- Vertex AI Agent Engine (deployment target)
+- Terraform + GitHub Actions (infrastructure and CI/CD)
 
-## How it works
+## How It Works
 
-```
+```text
 User question
-     |
-     v
-Google ADK Agent (Gemini 2.5 Flash)
-     |
-     |--- Regulation question? ---> search_regulations(query)
-     |                                    |
-     |                                    v
-     |                              LangChain RAG
-     |                              (FAISS + gemini-embedding-2-preview)
-     |                                    |
-     |                                    v
-     |                              Relevant PDF chunks
-     |                              (with section, page, source metadata)
-     |
-     |--- Historical/stats? -----> query_f1_history(sql_query)
-     |                                    |
-     |                                    v
-     |                              SQLite database
-     |                              (14 tables, 1950-2024 data)
-     |                                    |
-     |                                    v
-     |                              Query results (read-only, max 100 rows)
-     |
-     |--- Current/live info? ----> google_search(query)
-     |                                    |
-     |                                    v
-     |                              Web results
-     |
-     v
-Answer with sources
+    |
+    v
+ADK Agent (gemini-2.5-flash)
+    |
+    |-- Regulations question -----------> search_regulations(query)
+    |                                      -> FAISS over FIA PDFs
+    |
+    |-- Historical/statistics ----------> query_f1_history(sql_query)
+    |                                      -> SQLite (1950-2024, read-only SELECT)
+    |
+    |-- Current/live/time-sensitive ----> google_search(query)
+    |                                      -> Web results
+    |
+    v
+Unified answer + sources
 ```
 
-The agent routes each question to the right tool:
-- `search_regulations` for the official FIA 2026 rules
-- `query_f1_history` for historical statistics and records (1950-2024)
-- `google_search` for current season info, news, and general questions
+## Local Setup
 
-The agent can also combine multiple tools in a single answer (e.g., comparing historical stats with 2026 regulation changes).
-
-## Setup
-
-### 1. Install uv
+### 1. Install `uv`
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### 2. Clone and install
+### 2. Clone and install dependencies
 
 ```bash
 git clone https://github.com/carvalhocaio/f1-regulations-agent-chat
@@ -73,118 +69,134 @@ cd f1-regulations-agent-chat
 uv sync
 ```
 
-### 3. Configure API key
+### 3. Configure environment variables
+
+Create `.env` in project root:
 
 ```bash
-# Create a .env file and add your Google API key
-echo "GEMINI_API_KEY=your-key-here" > .env
+# Required (use either one)
+GEMINI_API_KEY=your-key-here
+# GOOGLE_API_KEY=your-key-here
+
+# Optional
+# GEMINI_EMBEDDING_MODEL=models/gemini-embedding-2-preview
 ```
 
-Get your key at: https://aistudio.google.com/app/apikey
+Notes:
+- The app first tries `GEMINI_API_KEY`, then falls back to `GOOGLE_API_KEY`.
+- Get API keys at https://aistudio.google.com/app/apikey
 
-### 4. Download the data
+### 4. Add source data to `docs/`
 
-**Regulations:** Download the six sections of the [FIA 2026 F1 Regulations](https://www.fia.com/regulation/type/110) and place them in the `docs/` directory:
+Regulations: download FIA 2026 F1 Regulations Sections A-F from:
+- https://www.fia.com/regulation/type/110
 
-- Section A — General Provisions
-- Section B — Sporting
-- Section C — Technical
-- Section D — Financial (F1 Teams)
-- Section E — Financial (Power Unit Manufacturers)
-- Section F — Operational
+Historical data: download Kaggle dataset folder:
+- https://www.kaggle.com/datasets/rohanrao/formula-1-world-championship-1950-2020
+- Place the extracted folder (starting with `Formula 1 ...`) inside `docs/`.
 
-**Historical data:** Download the [Formula 1 World Championship (1950-2024)](https://www.kaggle.com/datasets/rohanrao/formula-1-world-championship-1950-2020) dataset from Kaggle and place the folder inside `docs/`.
-
-### 5. Build the indexes
+### 5. Build local artifacts
 
 ```bash
 uv run build_index.py
 ```
 
-This builds both the FAISS vector store (`vector_store/`) and the SQLite database (`f1_data/f1_history.db`). Only needs to run once.
+This generates:
+- `vector_store/` (FAISS index)
+- `f1_data/f1_history.db` (SQLite DB)
 
-### 6. Run the assistant
+### 6. Run the assistant locally
 
 ```bash
-adk web f1_agent
+uv run adk web f1_agent
 ```
 
-This starts the ADK web interface where you can chat with the agent.
+## SQL Tool Constraints
 
-## Example questions
+`query_f1_history` is intentionally restricted:
+- Only `SELECT` queries are allowed
+- Write operations are blocked (`INSERT`, `UPDATE`, `DELETE`, `DROP`, etc.)
+- Results are capped at `100` rows
 
-**Regulations:**
+## Example Questions
 
-- *"What is the maximum power unit energy deployment per lap?"*
-- *"What are the dimensions allowed for the front wing?"*
-- *"What materials are prohibited in car construction?"*
-- *"What is the cost cap for F1 teams?"*
+Regulations:
+- "What is the maximum power unit energy deployment per lap?"
+- "What are the dimensions allowed for the front wing?"
+- "What is the cost cap for F1 teams?"
 
-**Historical data:**
+Historical:
+- "How many wins did Ayrton Senna have?"
+- "Which constructor has the most championships?"
+- "Compare Hamilton and Schumacher race wins."
 
-- *"Quantas vitórias Ayrton Senna teve?"*
-- *"Quem mais venceu em Monza?"*
-- *"Compare the win records of Hamilton and Schumacher"*
-- *"Which constructor has the most championships?"*
+Current/live:
+- "What is the race calendar for this season?"
+- "Who leads the championship right now?"
 
-**Current season:**
+Cross-source:
+- "Compare Schumacher's 2004 dominance with 2026 regulation changes."
+- "Show the last 10 drivers' champions."
 
-- *"What is the race calendar for this season?"*
-- *"Who leads the championship?"*
-- *"How does the sprint format work?"*
+## Project Structure
 
-**Multiple tools:**
-
-- *"Compare Schumacher's 2004 dominance with 2026 regulation changes"*
-- *"How does Hamilton's record compare to the 2026 power unit rules?"*
-
-## Project structure
-
-```
+```text
 f1-regulations-agent-chat/
 ├── f1_agent/
-│   ├── __init__.py        # Package exports
-│   ├── agent.py           # Google ADK agent + tool routing
-│   ├── tools.py           # search_regulations + query_f1_history tools
-│   ├── rag.py             # LangChain RAG pipeline (FAISS)
-│   └── db.py              # SQLite database (schema, build, queries)
-├── docs/                  # FIA 2026 regulation PDFs + Kaggle CSV dataset
-├── vector_store/          # Auto-generated FAISS index
-├── f1_data/               # Auto-generated SQLite database
-├── build_index.py         # One-time index + database builder
+│   ├── agent.py                # ADK agent definition and instructions
+│   ├── tools.py                # search_regulations + query_f1_history
+│   ├── rag.py                  # PDF loading, chunking, FAISS retrieval
+│   └── db.py                   # SQLite schema/build/query helpers
+├── docs/                       # FIA PDFs + Kaggle CSV folder (input data)
+├── vector_store/               # Generated FAISS artifacts (gitignored)
+├── f1_data/                    # Generated SQLite artifact package (gitignored)
+├── build_index.py              # Builds vector store + SQLite DB
+├── deployment/
+│   ├── deploy.py               # Vertex AI Agent Engine deploy script
+│   └── terraform/              # GCP infrastructure as code
+├── .github/workflows/
+│   ├── ci.yml                  # PR checks (ruff check + format check)
+│   └── deploy.yml              # Deploy pipeline on push to main
+├── DEPLOY.md                   # Full production deployment guide
 └── pyproject.toml
 ```
 
-## Regulation sections
+## Historical Database (Current Local Dataset)
 
-The agent covers all six sections of the FIA 2026 F1 Regulations:
+The SQLite DB contains 14 tables with the following row counts:
 
-| Section | Description |
-|---------|-------------|
-| A | General Provisions |
-| B | Sporting |
-| C | Technical |
-| D | Financial (F1 Teams) |
-| E | Financial (Power Unit Manufacturers) |
-| F | Operational |
+| Table | Rows |
+|---|---:|
+| `circuits` | 77 |
+| `constructors` | 212 |
+| `drivers` | 861 |
+| `races` | 1,125 |
+| `results` | 26,759 |
+| `qualifying` | 10,494 |
+| `driver_standings` | 34,863 |
+| `constructor_standings` | 13,391 |
+| `constructor_results` | 12,625 |
+| `lap_times` | 589,081 |
+| `pit_stops` | 11,371 |
+| `sprint_results` | 360 |
+| `seasons` | 75 |
+| `status` | 139 |
 
-## Historical database
+## Deployment and CI/CD (Summary)
 
-The SQLite database contains 14 tables with complete F1 World Championship data (1950-2024):
+- CI (`.github/workflows/ci.yml`):
+  - Runs on PRs to `main`
+  - Executes `uv run ruff check .` and `uv run ruff format --check .`
+- Deploy (`.github/workflows/deploy.yml`):
+  - Runs on push to `main` (environment: `production`)
+  - Authenticates with GCP
+  - Downloads `vector_store/` and `f1_data/` artifacts from Cloud Storage
+  - Generates `requirements-deploy.txt`
+  - Deploys/updates agent via `deployment/deploy.py`
 
-| Table | Description | Rows |
-|-------|-------------|------|
-| `circuits` | Circuit details (name, location, country) | 77 |
-| `constructors` | Constructor/team details | 212 |
-| `drivers` | Driver details (name, nationality, DOB) | 861 |
-| `races` | Race calendar (year, round, circuit, date) | 1,125 |
-| `results` | Race results (position, points, time) | 26,759 |
-| `qualifying` | Qualifying results (Q1, Q2, Q3 times) | 10,494 |
-| `driver_standings` | Driver championship standings per race | 34,863 |
-| `constructor_standings` | Constructor standings per race | 13,391 |
-| `constructor_results` | Constructor points per race | 12,625 |
-| `lap_times` | Individual lap times | 589,081 |
-| `pit_stops` | Pit stop data (duration, lap) | 11,371 |
-| `sprint_results` | Sprint race results | 360 |
-| `seasons` | Season list with URLs | 75 |
-| `status` | Race finish status codes | 139 |
+For complete production setup (GCP, Terraform, secrets, manual deploy, smoke test):
+- See [DEPLOY.md](./DEPLOY.md)
+
+## License
+
+No license file is currently included in this repository.
