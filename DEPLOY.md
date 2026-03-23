@@ -62,7 +62,7 @@ gcloud iam service-accounts create $SA_NAME \
   --project $PROJECT_ID
 
 # Required roles
-for role in roles/aiplatform.user roles/storage.objectAdmin roles/secretmanager.secretAccessor roles/logging.logWriter
+for role in roles/aiplatform.user roles/storage.admin roles/secretmanager.secretAccessor roles/logging.logWriter
   gcloud projects add-iam-policy-binding $PROJECT_ID \
     --member "serviceAccount:$SA_EMAIL" \
     --role $role
@@ -284,7 +284,7 @@ To update an already deployed agent without creating a new instance:
 ```fish
 # deploy.py automatically detects if the agent exists (by display_name)
 # and runs update instead of create.
-python deployment/deploy.py \
+uv run python deployment/deploy.py \
   --project-id $PROJECT_ID \
   --location $LOCATION \
   --staging-bucket $STAGING_BUCKET \
