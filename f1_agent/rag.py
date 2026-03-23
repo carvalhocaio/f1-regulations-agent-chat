@@ -15,17 +15,37 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pydantic import SecretStr
 
 DOCS_DIR = Path(__file__).parent.parent / "docs"
+
+
+def _resolve_vector_store_dir(base_dir: Path) -> Path:
+    """Resolve vector_store directory from either flat or nested package layouts."""
+    if (base_dir / "index.faiss").exists() and (base_dir / "index.pkl").exists():
+        return base_dir
+
+    nested_dir = base_dir / "vector_store"
+    if (nested_dir / "index.faiss").exists() and (nested_dir / "index.pkl").exists():
+        return nested_dir
+
+    return base_dir
+
+
+def _get_package_dir(pkg: object) -> Path:
+    pkg_file = getattr(pkg, "__file__", None)
+    if pkg_file is not None:
+        return Path(pkg_file).parent
+    return Path(getattr(pkg, "__path__")[0])
+
+
 # When deployed, vector_store is an installed package in site-packages.
 # Locally, it's a sibling directory of f1_agent.
 try:
     import vector_store as _vs_pkg
 
-    if _vs_pkg.__file__ is not None:
-        VECTOR_STORE_DIR = Path(_vs_pkg.__file__).parent
-    else:
-        VECTOR_STORE_DIR = Path(_vs_pkg.__path__[0])
+    _vector_store_base_dir = _get_package_dir(_vs_pkg)
 except ImportError:
-    VECTOR_STORE_DIR = Path(__file__).parent.parent / "vector_store"
+    _vector_store_base_dir = Path(__file__).parent.parent / "vector_store"
+
+VECTOR_STORE_DIR = _resolve_vector_store_dir(_vector_store_base_dir)
 
 EMBEDDING_MODEL: str = cast(
     str,

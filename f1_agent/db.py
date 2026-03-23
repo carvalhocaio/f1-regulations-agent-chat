@@ -9,18 +9,37 @@ import sqlite3
 from pathlib import Path
 
 DOCS_DIR = Path(__file__).parent.parent / "docs"
+
+
+def _resolve_db_dir(base_dir: Path) -> Path:
+    """Resolve f1_data directory from either flat or nested package layouts."""
+    if (base_dir / "f1_history.db").exists():
+        return base_dir
+
+    nested_dir = base_dir / "f1_data"
+    if (nested_dir / "f1_history.db").exists():
+        return nested_dir
+
+    return base_dir
+
+
+def _get_package_dir(pkg: object) -> Path:
+    pkg_file = getattr(pkg, "__file__", None)
+    if pkg_file is not None:
+        return Path(pkg_file).parent
+    return Path(getattr(pkg, "__path__")[0])
+
+
 # When deployed, f1_data is an installed package in site-packages.
 # Locally, it's a sibling directory of f1_agent.
 try:
     import f1_data as _f1_data_pkg
 
-    if _f1_data_pkg.__file__ is not None:
-        DB_DIR = Path(_f1_data_pkg.__file__).parent
-    else:
-        # Namespace package (no __init__.py) — use __path__ instead
-        DB_DIR = Path(_f1_data_pkg.__path__[0])
+    _db_base_dir = _get_package_dir(_f1_data_pkg)
 except ImportError:
-    DB_DIR = Path(__file__).parent.parent / "f1_data"
+    _db_base_dir = Path(__file__).parent.parent / "f1_data"
+
+DB_DIR = _resolve_db_dir(_db_base_dir)
 DB_PATH = DB_DIR / "f1_history.db"
 
 _connection: sqlite3.Connection | None = None

@@ -269,8 +269,8 @@ Since `vector_store/` and `f1_data/` are generated once and excluded from git, u
 
 ```fish
 # Upload (run once, or when data changes)
-gcloud storage cp -r vector_store/ "gs://f1-regulations-agent-chat-artifacts/vector_store/"
-gcloud storage cp -r f1_data/ "gs://f1-regulations-agent-chat-artifacts/f1_data/"
+gcloud storage cp -r vector_store/* "gs://f1-regulations-agent-chat-artifacts/vector_store/"
+gcloud storage cp -r f1_data/* "gs://f1-regulations-agent-chat-artifacts/f1_data/"
 ```
 
 CI automatically downloads these artifacts before deploy (see "Download data artifacts" step in the workflow).
