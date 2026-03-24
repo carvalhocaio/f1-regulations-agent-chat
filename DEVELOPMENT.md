@@ -111,7 +111,7 @@ Classification patterns for complex queries: comparisons (`vs`, `compare`, `dife
 
 `f1_agent/cache.py` provides near-instant responses for repeated questions:
 
-- **Embedding model**: `text-embedding-004` (fast, cheap)
+- **Embedding model**: `GEMINI_EMBEDDING_MODEL` (default: `models/gemini-embedding-2-preview`)
 - **Similarity threshold**: 0.92 (cosine)
 - **Storage**: FAISS (in-memory vectors) + SQLite (answers, metadata, hit counts)
 - **TTL**: 30 days for historical/regulation data, 24 hours for web-sourced answers
@@ -241,6 +241,30 @@ The deploy script (`deployment/deploy.py`) automatically reads the `f1-tuned-mod
 | `f1_agent/fine_tuning/schema.py` | TOOL_DECLARATIONS, `build_example()`, JSONL format helpers |
 | `f1_agent/fine_tuning/generate_dataset.py` | 8 generators producing 56 Q&A pairs from real database |
 | `f1_agent/fine_tuning/tune.py` | CLI to launch Vertex AI SFT job (`vertexai.tuning.sft.train`) |
+
+## Troubleshooting
+
+### `404 NOT_FOUND` for embeddings
+
+If you see an error like:
+
+`models/text-embedding-004 is not found for API version v1beta`
+
+Use a supported embedding model in `.env`:
+
+```bash
+GEMINI_EMBEDDING_MODEL=models/gemini-embedding-2-preview
+```
+
+The cache and RAG embedding paths both follow `GEMINI_EMBEDDING_MODEL`.
+
+### `404 Not Found` when asking simple questions
+
+If simple prompts fail and `.env` has `F1_TUNED_MODEL`, the local app may be trying
+to call a production Vertex endpoint that is unavailable for your credentials/project.
+
+For local development, keep `F1_TUNED_MODEL` unset so routing falls back to
+`gemini-2.5-flash`.
 
 ## Key Modules Reference
 

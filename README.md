@@ -83,7 +83,16 @@ cd f1-regulations-agent-chat
 uv sync
 
 # 3. Configure .env
-echo 'GOOGLE_API_KEY=your-key-here' > .env
+cat > .env <<'EOF'
+GOOGLE_API_KEY=your-key-here
+
+# Optional (recommended default for local embedding support)
+# GEMINI_EMBEDDING_MODEL=models/gemini-embedding-2-preview
+
+# Optional (production only). Keep unset locally unless you have
+# access to a valid Vertex tuned endpoint.
+# F1_TUNED_MODEL=projects/<PROJECT_NUMBER>/locations/us-central1/endpoints/<ENDPOINT_ID>
+EOF
 
 # 4. Add source data to docs/ (FIA PDFs + Kaggle CSVs)
 

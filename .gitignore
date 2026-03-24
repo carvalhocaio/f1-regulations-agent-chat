@@ -16,6 +16,7 @@ wheels/
 vector_store/
 f1_data/
 f1_agent/.adk/
+f1_cache/
 
 # deploy
 deployment_metadata.json

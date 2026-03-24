@@ -29,6 +29,15 @@ logger = logging.getLogger(__name__)
 
 _CACHE_DIR = Path(__file__).parent.parent / "f1_cache"
 
+_EMBEDDING_MODEL = cast(
+    str,
+    config(
+        "GEMINI_EMBEDDING_MODEL",
+        default="models/gemini-embedding-2-preview",
+        cast=str,
+    ),
+)
+
 # Similarity threshold — 1.0 = identical, lower = more lenient
 _SIMILARITY_THRESHOLD = 0.92
 
@@ -45,7 +54,7 @@ def _get_embeddings() -> GoogleGenerativeAIEmbeddings:
         raise ValueError("API key required for cache embeddings.")
 
     return GoogleGenerativeAIEmbeddings(
-        model="models/text-embedding-004",
+        model=_EMBEDDING_MODEL,
         api_key=SecretStr(api_key),
     )
 
@@ -113,8 +122,16 @@ class SemanticCache:
 
         q_vec = self._embed(question)
 
+        compatible_pairs = [
+            (idx, row_id, vec)
+            for idx, (row_id, vec) in enumerate(zip(self._ids, self._vectors))
+            if vec.shape == q_vec.shape
+        ]
+        if not compatible_pairs:
+            return None
+
         # Compute cosine similarities
-        matrix = np.stack(self._vectors)
+        matrix = np.stack([vec for _, _, vec in compatible_pairs])
         norms = np.linalg.norm(matrix, axis=1) * np.linalg.norm(q_vec)
         # Avoid division by zero
         norms = np.where(norms == 0, 1, norms)
@@ -126,7 +143,7 @@ class SemanticCache:
         if best_sim < _SIMILARITY_THRESHOLD:
             return None
 
-        row_id = self._ids[best_idx]
+        vec_idx, row_id, _ = compatible_pairs[best_idx]
 
         # Check TTL and return
         now = time.time()
@@ -141,7 +158,7 @@ class SemanticCache:
         answer, created_at, ttl = row
         if now > created_at + ttl:
             # Expired — evict
-            self._evict(row_id, best_idx)
+            self._evict(row_id, vec_idx)
             return None
 
         # Bump hit count
