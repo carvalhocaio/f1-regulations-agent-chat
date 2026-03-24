@@ -10,6 +10,7 @@ from f1_agent.callbacks import (
     check_cache,
     detect_corrections,
     inject_corrections,
+    inject_runtime_temporal_context,
     route_model,
     store_cache,
 )
@@ -107,7 +108,12 @@ root_agent = Agent(
         search,
         google_search,
     ],
-    before_model_callback=[check_cache, inject_corrections, route_model],
+    before_model_callback=[
+        check_cache,
+        inject_runtime_temporal_context,
+        inject_corrections,
+        route_model,
+    ],
     after_model_callback=[detect_corrections, store_cache],
     on_model_error_callback=handle_rate_limit,
 )

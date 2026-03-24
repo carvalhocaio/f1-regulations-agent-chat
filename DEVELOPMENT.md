@@ -87,15 +87,16 @@ Every request passes through a pipeline of ADK callbacks:
 ```text
 Before model:
   1. check_cache      — Return cached answer if similarity > 0.92
-  2. inject_corrections — Append user corrections from this session
-  3. route_model      — Route to Flash/tuned (simple) or Pro (complex)
+  2. inject_runtime_temporal_context — Inject current UTC date/year per request
+  3. inject_corrections — Append user corrections from this session
+  4. route_model      — Route to Flash/tuned (simple) or Pro (complex)
 
 After model:
-  4. detect_corrections — Detect if the user corrected the agent (PT/EN)
-  5. store_cache      — Cache the answer (TTL: 30 days static, 24h web)
+  5. detect_corrections — Detect if the user corrected the agent (PT/EN)
+  6. store_cache      — Cache the answer (TTL: 30 days static, 24h web)
 
 On error:
-  6. handle_rate_limit — User-friendly message for 429/503 errors
+  7. handle_rate_limit — User-friendly message for 429/503 errors
 ```
 
 ### Model Routing
@@ -115,6 +116,7 @@ Classification patterns for complex queries: comparisons (`vs`, `compare`, `dife
 - **Similarity threshold**: 0.92 (cosine)
 - **Storage**: FAISS (in-memory vectors) + SQLite (answers, metadata, hit counts)
 - **TTL**: 30 days for historical/regulation data, 24 hours for web-sourced answers
+- **Freshness guard**: Questions that require live/post-2024 data bypass cache and force fresh tool calls
 - **Location**: `f1_cache/` directory (created at runtime, gitignored)
 
 ### Hybrid RAG (Regulations)
@@ -153,7 +155,7 @@ The LLM chooses between templates (`query_f1_history_template`) and free-form SQ
 ## Running Tests
 
 ```bash
-# Run all 83 tests
+# Run all tests
 uv run python -m unittest discover tests -v
 
 # Run a specific test module
@@ -175,6 +177,7 @@ uv run python -m unittest tests.test_fine_tuning -v
 | `test_model_error_callback.py` | 4 | Rate limit handling (429/503) |
 | `test_search_alias.py` | 3 | Compatibility alias fallback |
 | `test_artifact_path_resolution.py` | 4 | Flat vs nested artifact layouts |
+| `test_temporal_context.py` | 6 | Dynamic year injection and cache bypass for time-sensitive queries |
 
 ## Linting
 

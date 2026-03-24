@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from datetime import datetime, timezone
 
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
@@ -21,6 +22,8 @@ from google.genai import types
 from f1_agent.cache import SemanticCache
 
 logger = logging.getLogger(__name__)
+
+_DB_MAX_YEAR = 2024
 
 # ── Model routing ───────────────────────────────────────────────────────
 
@@ -72,6 +75,42 @@ def _extract_user_text(callback_context, llm_request) -> str:
     return ""
 
 
+def _current_year() -> int:
+    """Return current UTC year for temporal reasoning decisions."""
+    return datetime.now(timezone.utc).year  # noqa: UP017 (py310 runtime)
+
+
+_YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
+_TIME_SENSITIVE_TERMS: list[re.Pattern] = [
+    re.compile(r"\b(current|latest|live|today|now|this season|standings?)\b", re.I),
+    re.compile(r"\b(atual|hoje|agora|temporada atual|classifica(?:ç|c)[aã]o)\b", re.I),
+]
+
+
+def _query_requires_web_data(text: str) -> bool:
+    """Return True if the question likely depends on post-2024/live data."""
+    years = [int(y.group(0)) for y in _YEAR_RE.finditer(text)]
+    if any(year > _DB_MAX_YEAR for year in years):
+        return True
+
+    return any(p.search(text) for p in _TIME_SENSITIVE_TERMS)
+
+
+def _runtime_temporal_addendum() -> str:
+    """Build authoritative temporal context to avoid stale year assumptions."""
+    current_year = _current_year()
+    today_utc = datetime.now(timezone.utc).date().isoformat()  # noqa: UP017
+    return (
+        "\n\n## Runtime temporal context (authoritative)\n"
+        f"- Today (UTC): {today_utc}\n"
+        f"- Current year: {current_year}\n"
+        "- Historical DB coverage: 1950-2024 only\n"
+        "- Any query involving 2025+ or live/current season MUST use"
+        " google_search_agent.\n"
+        "- Do not describe past years as future events."
+    )
+
+
 def route_model(callback_context, llm_request):
     """Before-model callback: route simple queries to Flash."""
     user_text = _extract_user_text(callback_context, llm_request)
@@ -118,6 +157,10 @@ def check_cache(callback_context, llm_request):
     if not user_text:
         return None
 
+    # Time-sensitive queries should prefer fresh tool calls.
+    if _query_requires_web_data(user_text):
+        return None
+
     hit = cache.get(user_text)
     if hit is None:
         return None
@@ -151,8 +194,12 @@ def store_cache(callback_context, llm_response):
         texts = [p.text for p in llm_response.content.parts if p.text]
         if texts:
             answer = "\n".join(texts)
-            # Detect if answer used google_search (short TTL)
-            used_web = "🌐" in answer or "google_search" in answer.lower()
+            # Detect if answer used web data (short TTL)
+            used_web = (
+                "🌐" in answer
+                or "google_search" in answer.lower()
+                or _query_requires_web_data(user_text)
+            )
             cache.put(user_text, answer, web_source=used_web)
             logger.debug("Cache STORE for: %s", user_text[:80])
 
@@ -237,6 +284,12 @@ def inject_corrections(callback_context, llm_request):
 
     llm_request.append_instructions([addendum])
     logger.debug("Injected %d corrections into prompt", len(corrections))
+    return None
+
+
+def inject_runtime_temporal_context(callback_context, llm_request):
+    """Before-model callback: inject dynamic date/year guidance every request."""
+    llm_request.append_instructions([_runtime_temporal_addendum()])
     return None
 
 

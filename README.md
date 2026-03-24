@@ -22,6 +22,7 @@ Built with [Google ADK](https://google.github.io/adk-docs/) and powered by Gemin
 - **Model routing** — simple queries go to Flash (or fine-tuned Flash), complex ones stay on Pro
 - **Semantic cache** — near-instant responses for repeated/similar questions (cosine similarity > 0.92)
 - **Session corrections** — detects when users correct the agent (PT/EN) and avoids repeating mistakes
+- **Runtime temporal context** — injects current UTC date/year on every request to avoid stale year assumptions after deploy
 - **Temporal reasoning** — automatically splits questions: `1950-2024` via SQLite, `2025+` via web search
 
 ## How It Works
@@ -31,6 +32,8 @@ User question
     |
     v
 [check_cache] -----> Cache HIT? Return cached answer (<200ms)
+    |
+[inject_runtime_temporal_context] --> Inject current UTC date/year (per request)
     |
 [inject_corrections] --> Append session corrections to prompt
     |
@@ -55,6 +58,7 @@ ADK Agent (Gemini)
 [detect_corrections] --> Store if user corrected the agent
     |
 [store_cache] --------> Cache the answer for future reuse
+                         (time-sensitive/web queries are not reused via cache)
     |
     v
 Unified answer + sources
