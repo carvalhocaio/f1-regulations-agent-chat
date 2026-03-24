@@ -6,6 +6,7 @@ from google.adk.models.llm_response import LlmResponse
 from google.adk.tools.google_search_tool import GoogleSearchTool
 from google.genai import types
 
+from f1_agent.callbacks import check_cache, route_model, store_cache
 from f1_agent.tools import (
     query_f1_history,
     query_f1_history_template,
@@ -100,5 +101,7 @@ root_agent = Agent(
         search,
         google_search,
     ],
+    before_model_callback=[check_cache, route_model],
+    after_model_callback=store_cache,
     on_model_error_callback=handle_rate_limit,
 )
