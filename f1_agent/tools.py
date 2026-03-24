@@ -1,7 +1,9 @@
+import json
 import re
 
 from f1_agent import db
 from f1_agent.rag import get_vector_store
+from f1_agent.sql_templates import TEMPLATES, resolve_template
 
 _FORBIDDEN_RE = re.compile(
     r"^\s*(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|ATTACH|DETACH|PRAGMA|REPLACE|VACUUM|REINDEX)\b",
@@ -65,6 +67,87 @@ def search(query: str | None = None, request: str | None = None) -> dict:
         ),
         "valid_tools": valid_tools,
         "suggested_query": normalized_query,
+    }
+
+
+def query_f1_history_template(template_name: str, params: str = "{}") -> dict:
+    """Execute a pre-built SQL template against the F1 historical database.
+
+    Use this tool instead of query_f1_history when the question matches one of
+    the available templates.  Templates produce correct, optimised SQL and
+    avoid common mistakes (e.g. wrong JOINs for champions).
+
+    AVAILABLE TEMPLATES:
+
+    - driver_champions(year?, from_year?, to_year?)
+      World Drivers' Champions.
+    - constructor_champions(year?, from_year?, to_year?)
+      World Constructors' Champions.
+    - race_winners_by_country(country)
+      All race winners for a country/circuit.
+    - race_results_by_year_country(year, country)
+      Full top-10 result for a GP in a given year + country.
+    - driver_career_stats(driver_name)
+      Career stats: wins, podiums, poles, championships.
+    - driver_season_results(driver_name, year)
+      All race results for a driver in a season.
+    - head_to_head_teammates(driver1, driver2, year)
+      Head-to-head between teammates in a season.
+    - most_wins_all_time(limit=10)
+      Top N drivers by wins.
+    - most_poles_all_time(limit=10)
+      Top N drivers by poles.
+    - most_podiums_all_time(limit=10)
+      Top N drivers by podiums.
+    - most_constructor_wins(limit=10)
+      Top N constructors by wins.
+    - season_calendar(year)
+      Race calendar for a season.
+    - season_standings_final(year)
+      Final driver standings for a season.
+    - fastest_pit_stops_race(year, country, limit=10)
+      Fastest pit stops in a race.
+    - fastest_laps_race(year, country, limit=10)
+      Fastest laps in a race.
+
+    Args:
+        template_name: Name of the template to use (see list above).
+        params: JSON string with template parameters,
+                e.g. '{"year": 2023, "country": "Brazil"}'.
+    """
+    try:
+        parsed_params = json.loads(params) if params else {}
+    except json.JSONDecodeError as e:
+        return {"status": "error", "message": f"Invalid JSON in params: {e}"}
+
+    try:
+        sql = resolve_template(template_name, **parsed_params)
+    except (KeyError, ValueError) as e:
+        return {
+            "status": "error",
+            "message": str(e),
+            "available_templates": list(TEMPLATES.keys()),
+        }
+
+    try:
+        results = db.execute_query(sql)
+    except Exception as e:
+        return {"status": "error", "message": f"SQL error: {e}"}
+
+    if not results:
+        return {
+            "status": "no_results",
+            "message": "Query returned no results.",
+            "results": [],
+            "row_count": 0,
+        }
+
+    truncated = len(results) >= db.MAX_ROWS
+    return {
+        "status": "success",
+        "results": results,
+        "row_count": len(results),
+        "truncated": truncated,
     }
 
 

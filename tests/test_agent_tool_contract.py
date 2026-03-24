@@ -10,12 +10,20 @@ class AgentToolContractTests(unittest.TestCase):
         self.assertIn("google_search_agent", instruction)
         self.assertNotIn("**google_search**", instruction)
 
-    def test_instruction_includes_search_alias_recovery_rule(self):
+    def test_instruction_mentions_search_as_fallback(self):
         instruction = root_agent.instruction
 
-        self.assertIn("invalid_tool_alias", instruction)
-        self.assertIn("valid_tools", instruction)
-        self.assertIn("Do NOT proactively choose `search`", instruction)
+        self.assertIn("search", instruction)
+        self.assertIn("fallback", instruction.lower())
+
+    def test_instruction_loaded_from_template(self):
+        instruction = root_agent.instruction
+
+        # Should contain interpolated current year (not the placeholder)
+        self.assertNotIn("{CURRENT_YEAR}", instruction)
+        # Should contain few-shot examples
+        self.assertIn("Example 1", instruction)
+        self.assertIn("query_f1_history_template", instruction)
 
     def test_agent_registers_expected_tools(self):
         tool_names = []
@@ -27,6 +35,7 @@ class AgentToolContractTests(unittest.TestCase):
 
         self.assertIn("search_regulations", tool_names)
         self.assertIn("query_f1_history", tool_names)
+        self.assertIn("query_f1_history_template", tool_names)
         self.assertIn("search", tool_names)
         self.assertIn("google_search", tool_names)
 
