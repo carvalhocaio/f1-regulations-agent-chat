@@ -42,9 +42,16 @@ def main():
         staging_bucket=args.staging_bucket,
     )
 
+    # F1_TUNED_MODEL is optional — falls back to gemini-2.5-flash if not set
+    try:
+        tuned_model = get_secret(args.project_id, "f1-tuned-model")
+    except Exception:
+        tuned_model = ""
+        print("Warning: f1-tuned-model secret not found, using base Flash model")
+
     env_vars = {
         "GEMINI_API_KEY": get_secret(args.project_id, "google-api-key"),
-        "F1_TUNED_MODEL": get_secret(args.project_id, "f1-tuned-model"),
+        "F1_TUNED_MODEL": tuned_model,
         "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
     }

@@ -94,19 +94,30 @@ gcloud storage buckets add-iam-policy-binding $STAGING_BUCKET \
   --role roles/storage.objectAdmin
 ```
 
-### 1.6) Store API Key in Secret Manager
+### 1.6) Store secrets in Secret Manager
 
 ```fish
+# Gemini API key (required)
 echo -n "YOUR_GEMINI_API_KEY" | gcloud secrets create google-api-key \
   --project $PROJECT_ID \
   --replication-policy automatic \
   --data-file=-
 
-# Grant access to SA
-gcloud secrets add-iam-policy-binding google-api-key \
+# Fine-tuned model endpoint (optional — falls back to gemini-2.5-flash if not set)
+# Only needed after running a fine-tuning job (see DEVELOPMENT.md)
+echo -n "projects/PROJECT_NUMBER/locations/us-central1/endpoints/ENDPOINT_ID" | \
+  gcloud secrets create f1-tuned-model \
   --project $PROJECT_ID \
-  --member "serviceAccount:$SA_EMAIL" \
-  --role roles/secretmanager.secretAccessor
+  --replication-policy automatic \
+  --data-file=-
+
+# Grant access to SA
+for secret in google-api-key f1-tuned-model
+  gcloud secrets add-iam-policy-binding $secret \
+    --project $PROJECT_ID \
+    --member "serviceAccount:$SA_EMAIL" \
+    --role roles/secretmanager.secretAccessor
+end
 ```
 
 > If any key was ever committed or exposed in logs/docs, rotate it immediately in the provider console and update Secret Manager with the new value.
@@ -315,7 +326,8 @@ print("Deleted:", os.environ["RESOURCE_NAME"])
 
 - **Reserved variables**: Never set `GOOGLE_CLOUD_PROJECT` or `GOOGLE_APPLICATION_CREDENTIALS` as env vars in the deploy. Use `vertexai.init()`.
 - **Region**: Agent Engine must use the same region as the staging bucket.
-- **LLM model version**: Production uses the model configured in `f1_agent/agent.py` (`root_agent.model`, currently `gemini-2.5-pro`). Any model change requires a new deploy.
+- **LLM model version**: Production uses `gemini-2.5-pro` for complex queries and the fine-tuned Flash endpoint (`F1_TUNED_MODEL`) for simple queries. Model routing is automatic via callbacks.
+- **Fine-tuned model**: The `f1-tuned-model` secret is optional. If not set, simple queries fall back to `gemini-2.5-flash`. See [DEVELOPMENT.md](./DEVELOPMENT.md#fine-tuning-production-only) for details.
 - **Scaling**: Adjust `min_instances` and `max_instances` according to demand.
 - **Data artifacts**: If PDFs or CSVs are updated, re-run `build_index.py` locally and upload the new artifacts to the bucket.
 - **Telemetry**: The deploy already enables traces and logs via OpenTelemetry. Access them in the Vertex AI console under **Dashboard** and **Traces**.
