@@ -12,6 +12,7 @@ ADK callbacks for model routing, semantic caching, and session corrections.
 from __future__ import annotations
 
 import logging
+import os
 import re
 
 from google.adk.models.llm_response import LlmResponse
@@ -23,7 +24,9 @@ logger = logging.getLogger(__name__)
 
 # ── Model routing ───────────────────────────────────────────────────────
 
-FLASH_MODEL = "gemini-2.5-flash"
+# Fine-tuned Flash model for F1 queries (Vertex AI endpoint).
+# Set F1_TUNED_MODEL in .env to the tuned endpoint, or leave empty for base Flash.
+FLASH_MODEL = os.environ.get("F1_TUNED_MODEL", "") or "gemini-2.5-flash"
 
 # Patterns that indicate a *complex* question (keep on Pro)
 _COMPLEX_PATTERNS: list[re.Pattern] = [

@@ -44,6 +44,7 @@ def main():
 
     env_vars = {
         "GEMINI_API_KEY": get_secret(args.project_id, "google-api-key"),
+        "F1_TUNED_MODEL": get_secret(args.project_id, "f1-tuned-model"),
         "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
     }
