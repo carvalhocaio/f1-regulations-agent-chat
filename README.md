@@ -1,7 +1,7 @@
 # F1 Regulations Agent Chat
 
 AI assistant for Formula 1 that combines:
-- Official **FIA 2026 regulations** (RAG over PDFs)
+- Official **FIA 2026 regulations** (hybrid RAG over PDFs)
 - Historical **F1 World Championship data (1950-2024)** in SQLite
 - **Current and time-sensitive** information via Google Search
 
@@ -11,37 +11,18 @@ Built with [Google ADK](https://google.github.io/adk-docs/) and powered by Gemin
 
 ## Core Capabilities
 
-- `search_regulations`: semantic retrieval over FIA 2026 Sections A-F
-- `query_f1_history`: read-only SQL access to historical F1 data
-- `google_search_agent`: live web retrieval for current season/news questions
-- `search` (compatibility alias): guided fallback if the model hallucinates a generic tool name
-- Multi-tool answers when a question spans historical + current + regulations data
+**Tools:**
+- `search_regulations` — hybrid retrieval (FAISS semantic + BM25 keyword) over FIA 2026 Sections A-F
+- `query_f1_history_template` — pre-built SQL templates for common F1 queries (champions, career stats, records, standings, head-to-head)
+- `query_f1_history` — read-only SQL access to historical F1 data
+- `google_search_agent` — live web retrieval for current season/news
+- `search` (compatibility alias) — guided fallback if the model hallucinates a generic tool name
 
-The agent is explicitly instructed to split temporal questions across sources:
-- `1950-2024` -> SQLite (`query_f1_history`)
-- `2025+` or current season -> web (`google_search_agent`)
-
-## Stack
-
-- [Google ADK](https://google.github.io/adk-docs/) - agent framework and local web UI
-- [Gemini 2.5 Pro](https://deepmind.google/technologies/gemini/) - LLM (`gemini-2.5-pro`)
-- [LangChain](https://python.langchain.com/) + [PyMuPDF](https://pymupdf.readthedocs.io/) - PDF ingestion and chunking
-- [FAISS](https://github.com/facebookresearch/faiss) - vector similarity search
-- [SQLite](https://www.sqlite.org/) - historical F1 database
-- Google ADK `GoogleSearchTool` - real-time web information
-- Vertex AI Agent Engine (deployment target)
-- Terraform + GitHub Actions (infrastructure and CI/CD)
-
-## Current Status (2026-03-23)
-
-- Runtime LLM model: `gemini-2.5-pro` (`f1_agent/agent.py`, `root_agent.model`)
-- Default embedding model: `models/gemini-embedding-2-preview` (override via `GEMINI_EMBEDDING_MODEL`)
-- Local quality checks:
-  - `uv run ruff check .` -> passed
-  - `uv run python -m unittest discover -s tests -p "test_*.py" -v` -> passed (`10/10` tests)
-- Local generated artifacts available:
-  - `vector_store/index.faiss` and `vector_store/index.pkl`
-  - `f1_data/f1_history.db` (14 tables, historical coverage `1950-2024`)
+**Intelligence layer:**
+- **Model routing** — simple queries go to Flash (or fine-tuned Flash), complex ones stay on Pro
+- **Semantic cache** — near-instant responses for repeated/similar questions (cosine similarity > 0.92)
+- **Session corrections** — detects when users correct the agent (PT/EN) and avoids repeating mistakes
+- **Temporal reasoning** — automatically splits questions: `1950-2024` via SQLite, `2025+` via web search
 
 ## How It Works
 
@@ -49,80 +30,91 @@ The agent is explicitly instructed to split temporal questions across sources:
 User question
     |
     v
-ADK Agent (gemini-2.5-pro)
+[check_cache] -----> Cache HIT? Return cached answer (<200ms)
     |
-    |-- Regulations question -----------> search_regulations(query)
-    |                                      -> FAISS over FIA PDFs
+[inject_corrections] --> Append session corrections to prompt
     |
-    |-- Historical/statistics ----------> query_f1_history(sql_query)
-    |                                      -> SQLite (1950-2024, read-only SELECT)
+[route_model] -----> Simple? -> Flash/Tuned | Complex? -> Pro
     |
-    |-- Current/live/time-sensitive ----> google_search_agent(request)
-    |                                      -> Web results
+    v
+ADK Agent (Gemini)
+    |
+    |-- Regulations -----------> search_regulations(query)
+    |                             -> FAISS + BM25 hybrid search
+    |
+    |-- Historical/stats ------> query_f1_history_template(name, params)
+    |                             -> Pre-built SQL templates
+    |
+    |-- Free-form SQL ---------> query_f1_history(sql_query)
+    |                             -> SQLite (1950-2024, SELECT only)
+    |
+    |-- Current/live ----------> google_search_agent(request)
+    |                             -> Web results
+    |
+    v
+[detect_corrections] --> Store if user corrected the agent
+    |
+[store_cache] --------> Cache the answer for future reuse
     |
     v
 Unified answer + sources
 ```
 
-## Local Setup
+## Stack
 
-### 1. Install `uv`
+- [Google ADK](https://google.github.io/adk-docs/) — agent framework and local web UI
+- [Gemini 2.5 Pro / Flash](https://deepmind.google/technologies/gemini/) — LLM with dynamic routing
+- [LangChain](https://python.langchain.com/) + [PyMuPDF](https://pymupdf.readthedocs.io/) — PDF ingestion and chunking
+- [FAISS](https://github.com/facebookresearch/faiss) + [BM25](https://github.com/dorianbrown/rank_bm25) — hybrid vector + keyword search with reciprocal rank fusion
+- [SQLite](https://www.sqlite.org/) — historical F1 database with pre-built query templates
+- Vertex AI Agent Engine — production deployment target
+- Vertex AI SFT — supervised fine-tuning pipeline for domain-specific Flash model
+- Terraform + GitHub Actions — infrastructure and CI/CD
+
+## Quick Start
 
 ```bash
+# 1. Install uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
-```
 
-### 2. Clone and install dependencies
-
-```bash
+# 2. Clone and install
 git clone https://github.com/carvalhocaio/f1-regulations-agent-chat
 cd f1-regulations-agent-chat
-
 uv sync
-```
 
-### 3. Configure environment variables
+# 3. Configure .env
+echo 'GOOGLE_API_KEY=your-key-here' > .env
 
-Create `.env` in project root:
+# 4. Add source data to docs/ (FIA PDFs + Kaggle CSVs)
 
-```bash
-# Required (use either one)
-GEMINI_API_KEY=your-key-here
-# GOOGLE_API_KEY=your-key-here
-
-# Optional
-# GEMINI_EMBEDDING_MODEL=models/gemini-embedding-2-preview
-```
-
-Notes:
-- The app first tries `GEMINI_API_KEY`, then falls back to `GOOGLE_API_KEY`.
-- Get API keys at https://aistudio.google.com/app/apikey
-- LLM model selection is currently configured in code (`f1_agent/agent.py`, `root_agent.model`), not via `.env`.
-
-### 4. Add source data to `docs/`
-
-Regulations: download FIA 2026 F1 Regulations Sections A-F from:
-- https://www.fia.com/regulation/type/110
-
-Historical data: download Kaggle dataset folder:
-- https://www.kaggle.com/datasets/rohanrao/formula-1-world-championship-1950-2020
-- Place the extracted folder (starting with `Formula 1 ...`) inside `docs/`.
-
-### 5. Build local artifacts
-
-```bash
+# 5. Build artifacts
 uv run build_index.py
+
+# 6. Run locally
+make run
 ```
 
-This generates:
-- `vector_store/` (FAISS index)
-- `f1_data/f1_history.db` (SQLite DB)
+For detailed setup instructions, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 
-### 6. Run the assistant locally
+## Example Questions
 
-```bash
-uv run adk web f1_agent
-```
+**Regulations:**
+- "What is the maximum power unit energy deployment per lap?"
+- "What are the dimensions allowed for the front wing?"
+- "What is the cost cap for F1 teams?"
+
+**Historical:**
+- "How many wins did Ayrton Senna have?"
+- "Which constructor has the most championships?"
+- "Compare Hamilton and Schumacher race wins."
+
+**Current/live:**
+- "What is the race calendar for this season?"
+- "Who leads the championship right now?"
+
+**Cross-source:**
+- "Compare Schumacher's 2004 dominance with 2026 regulation changes."
+- "Show the last 10 drivers' champions."
 
 ## SQL Tool Constraints
 
@@ -131,50 +123,43 @@ uv run adk web f1_agent
 - Write operations are blocked (`INSERT`, `UPDATE`, `DELETE`, `DROP`, etc.)
 - Results are capped at `100` rows
 
-## Example Questions
-
-Regulations:
-- "What is the maximum power unit energy deployment per lap?"
-- "What are the dimensions allowed for the front wing?"
-- "What is the cost cap for F1 teams?"
-
-Historical:
-- "How many wins did Ayrton Senna have?"
-- "Which constructor has the most championships?"
-- "Compare Hamilton and Schumacher race wins."
-
-Current/live:
-- "What is the race calendar for this season?"
-- "Who leads the championship right now?"
-
-Cross-source:
-- "Compare Schumacher's 2004 dominance with 2026 regulation changes."
-- "Show the last 10 drivers' champions."
-
 ## Project Structure
 
 ```text
 f1-regulations-agent-chat/
 ├── f1_agent/
-│   ├── agent.py                # ADK agent definition and instructions
-│   ├── tools.py                # search_regulations + query_f1_history + search(alias)
-│   ├── rag.py                  # PDF loading, chunking, FAISS retrieval
-│   └── db.py                   # SQLite schema/build/query helpers
-├── docs/                       # FIA PDFs + Kaggle CSV folder (input data)
-├── vector_store/               # Generated FAISS artifacts (gitignored)
-├── f1_data/                    # Generated SQLite artifact package (gitignored)
-├── build_index.py              # Builds vector store + SQLite DB
+│   ├── agent.py               # ADK agent definition, tools, and callbacks
+│   ├── callbacks.py            # Model routing, semantic cache, session corrections
+│   ├── cache.py                # SemanticCache (FAISS + SQLite, TTL-based)
+│   ├── tools.py                # Agent tools (regulations, history, search)
+│   ├── rag.py                  # PDF loading, chunking, FAISS + BM25 hybrid search
+│   ├── db.py                   # SQLite schema/build/query helpers
+│   ├── sql_templates.py        # 15 pre-built SQL templates for common queries
+│   ├── prompts/
+│   │   └── system_instruction.txt  # Externalized system prompt with few-shot examples
+│   └── fine_tuning/
+│       ├── schema.py           # Vertex AI SFT dataset format helpers
+│       ├── generate_dataset.py # Auto-generates Q&A pairs from real F1 database
+│       └── tune.py             # Launches SFT job on Vertex AI
+├── tests/                      # 83 unit tests (10 test modules)
 ├── deployment/
 │   ├── deploy.py               # Vertex AI Agent Engine deploy script
 │   └── terraform/              # GCP infrastructure as code
+├── docs/                       # FIA PDFs + Kaggle CSV folder (input data)
+├── vector_store/               # Generated FAISS artifacts (gitignored)
+├── f1_data/                    # Generated SQLite artifact (gitignored)
+├── f1_cache/                   # Semantic cache data (runtime, gitignored)
+├── build_index.py              # Builds vector store + SQLite DB
 ├── .github/workflows/
-│   ├── ci.yml                  # PR checks (ruff check + format check)
+│   ├── ci.yml                  # PR checks (ruff + tests)
 │   └── deploy.yml              # Deploy pipeline on push to main
-├── DEPLOY.md                   # Full production deployment guide
+├── DEPLOY.md                   # Production deployment guide
+├── DEVELOPMENT.md              # Development setup and architecture guide
+├── Makefile
 └── pyproject.toml
 ```
 
-## Historical Database (Current Local Dataset)
+## Historical Database
 
 The SQLite DB contains 14 tables with the following row counts:
 
@@ -195,20 +180,16 @@ The SQLite DB contains 14 tables with the following row counts:
 | `seasons` | 75 |
 | `status` | 139 |
 
-## Deployment and CI/CD (Summary)
+## Deployment and CI/CD
 
-- CI (`.github/workflows/ci.yml`):
-  - Runs on PRs to `main`
-  - Executes `uv run ruff check .`, `uv run ruff format --check .`, and unit tests
-- Deploy (`.github/workflows/deploy.yml`):
-  - Runs on push to `main` (environment: `production`)
-  - Authenticates with GCP
-  - Downloads `vector_store/` and `f1_data/` artifacts from Cloud Storage
-  - Generates `requirements-deploy.txt`
-  - Deploys/updates agent via `deployment/deploy.py`
+- **CI** (`.github/workflows/ci.yml`): Runs on PRs — ruff check, format check, unit tests
+- **Deploy** (`.github/workflows/deploy.yml`): Runs on push to `main` — downloads artifacts, deploys to Agent Engine
 
 For complete production setup (GCP, Terraform, secrets, manual deploy, smoke test):
 - See [DEPLOY.md](./DEPLOY.md)
+
+For development setup (local environment, architecture, testing, fine-tuning):
+- See [DEVELOPMENT.md](./DEVELOPMENT.md)
 
 ## License
 
