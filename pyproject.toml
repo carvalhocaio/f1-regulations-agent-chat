@@ -17,6 +17,7 @@ dependencies = [
     "google-cloud-aiplatform>=1.141.0",
     "vertexai>=1.43.0",
     "opentelemetry-instrumentation-fastapi>=0.59b0",
+    "rank-bm25>=0.2.2",
 ]
 
 [project.optional-dependencies]

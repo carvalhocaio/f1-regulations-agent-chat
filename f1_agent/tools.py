@@ -2,7 +2,7 @@ import json
 import re
 
 from f1_agent import db
-from f1_agent.rag import get_vector_store
+from f1_agent.rag import hybrid_search
 from f1_agent.sql_templates import TEMPLATES, resolve_template
 
 _FORBIDDEN_RE = re.compile(
@@ -14,25 +14,30 @@ _FORBIDDEN_RE = re.compile(
 def search_regulations(query: str) -> dict:
     """Search the FIA 2026 F1 Regulations for relevant information.
 
+    Uses hybrid search (FAISS semantic + BM25 keyword) with reciprocal rank
+    fusion for better results, especially when searching for specific article
+    numbers or technical terms.
+
     Args:
         query: The search query about F1 regulations.
     """
-    vector_store = get_vector_store()
-    results = vector_store.similarity_search(query, k=5)
+    results = hybrid_search(query, k=5)
 
     if not results:
         return {"status": "no_results", "message": "No relevant regulations found."}
 
     chunks = []
     for doc in results:
-        chunks.append(
-            {
-                "content": doc.page_content,
-                "source": doc.metadata.get("source", "unknown"),
-                "page": doc.metadata.get("page", "unknown"),
-                "section": doc.metadata.get("section", "unknown"),
-            }
-        )
+        chunk = {
+            "content": doc.page_content,
+            "source": doc.metadata.get("source", "unknown"),
+            "page": doc.metadata.get("page", "unknown"),
+            "section": doc.metadata.get("section", "unknown"),
+        }
+        article = doc.metadata.get("article")
+        if article:
+            chunk["article"] = article
+        chunks.append(chunk)
 
     return {"status": "success", "results": chunks}
 
