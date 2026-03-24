@@ -33,6 +33,9 @@ def _load_instruction() -> str:
     template = (_PROMPTS_DIR / "system_instruction.txt").read_text(encoding="utf-8")
     return template.format(
         CURRENT_YEAR=CURRENT_YEAR,
+        YEAR_MINUS_1=CURRENT_YEAR - 1,
+        YEAR_MINUS_2=CURRENT_YEAR - 2,
+        YEAR_MINUS_3=CURRENT_YEAR - 3,
         YEAR_MINUS_4=CURRENT_YEAR - 4,
     )
 

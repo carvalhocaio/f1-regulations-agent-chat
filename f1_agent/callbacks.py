@@ -86,6 +86,20 @@ _TIME_SENSITIVE_TERMS: list[re.Pattern] = [
     re.compile(r"\b(atual|hoje|agora|temporada atual|classifica(?:ç|c)[aã]o)\b", re.I),
 ]
 
+# Relative temporal expressions that likely need post-2024 data
+_RELATIVE_TEMPORAL_RE: list[re.Pattern] = [
+    re.compile(
+        r"\b(últim[oa]s?|last|past|previous|passad[oa]|anterior)\s+"
+        r"(temporada|season|campeonato|championship|ano|year)",
+        re.I,
+    ),
+    re.compile(
+        r"\b(atual|current|reigning|defend\w*)\s+"
+        r"(campe[aã]o|champion|líder|leader)",
+        re.I,
+    ),
+]
+
 
 def _query_requires_web_data(text: str) -> bool:
     """Return True if the question likely depends on post-2024/live data."""
@@ -93,22 +107,161 @@ def _query_requires_web_data(text: str) -> bool:
     if any(year > _DB_MAX_YEAR for year in years):
         return True
 
-    return any(p.search(text) for p in _TIME_SENSITIVE_TERMS)
+    if any(p.search(text) for p in _TIME_SENSITIVE_TERMS):
+        return True
+
+    # Relative temporal expressions likely resolve to post-2024 seasons
+    return any(p.search(text) for p in _RELATIVE_TEMPORAL_RE)
 
 
 def _runtime_temporal_addendum() -> str:
     """Build authoritative temporal context to avoid stale year assumptions."""
     current_year = _current_year()
+    last_completed = current_year - 1
     today_utc = datetime.now(timezone.utc).date().isoformat()  # noqa: UP017
     return (
-        "\n\n## Runtime temporal context (authoritative)\n"
+        "\n\n## Runtime temporal context — OVERRIDES YOUR TRAINING DATA\n"
         f"- Today (UTC): {today_utc}\n"
         f"- Current year: {current_year}\n"
-        "- Historical DB coverage: 1950-2024 only\n"
-        "- Any query involving 2025+ or live/current season MUST use"
-        " google_search_agent.\n"
-        "- Do not describe past years as future events."
+        f"- The {last_completed} F1 season is FULLY COMPLETED"
+        f" (ended Dec {last_completed}).\n"
+        f"- All seasons from 1950 through {last_completed}"
+        " are FINISHED, HISTORICAL seasons.\n"
+        "- Historical DB coverage: 1950-2024 only.\n"
+        f"- For data from 2025 through {last_completed}:"
+        " use google_search_agent.\n"
+        f"- For data from {current_year} (ongoing season):"
+        " use google_search_agent.\n"
+        "- CRITICAL: Your training data may be outdated. If your training"
+        f" data says '{last_completed} season hasn't concluded' or similar,"
+        f" THAT IS WRONG. Trust THIS instruction: the {last_completed}"
+        " season is over. When google_search_agent returns results about"
+        " post-2024 seasons, TRUST and REPORT those results."
+        " Do NOT contradict them with your training knowledge.\n"
+        "- Do not describe completed seasons as future or ongoing events."
     )
+
+
+# ── Temporal pre-resolution ────────────────────────────────────────────
+
+# Patterns to detect relative temporal expressions and resolve to years
+_LAST_SEASON_RE = re.compile(
+    r"\b(últim[oa]|last|previous|passad[oa]|anterior)\s+"
+    r"(temporada|season|campeonato|championship)",
+    re.I,
+)
+_LAST_N_SEASONS_RE = re.compile(
+    r"\b(últim[oa]s|last|past)\s+(\d+)\s+"
+    r"(temporadas?|seasons?|anos?|years?|campeonatos?|championships?|"
+    r"campe[oõ][ea]s?|champions?|vencedor[ea]s?|winners?)",
+    re.I,
+)
+_CURRENT_CHAMPION_RE = re.compile(
+    r"\b(atual|current|reigning|defend\w*)\s+"
+    r"(campe[aã]o|champion)",
+    re.I,
+)
+_THIS_SEASON_RE = re.compile(
+    r"\b(esta?|this|current|atual)\s+(temporada|season|ano|year)\b",
+    re.I,
+)
+
+
+def _resolve_temporal_references(user_text: str) -> str | None:
+    """Resolve relative temporal expressions to concrete years.
+
+    Returns a prompt addendum with the resolution, or None if no
+    relative temporal expressions were detected.
+    """
+    if not user_text:
+        return None
+
+    current_year = _current_year()
+    last_completed = current_year - 1
+    resolutions: list[str] = []
+    tool_hints: list[str] = []
+
+    # "última temporada" / "last season"
+    if _LAST_SEASON_RE.search(user_text):
+        resolutions.append(
+            f"- 'Last/previous season' = **{last_completed}**"
+            f" (COMPLETED — ended Dec {last_completed})"
+        )
+        if last_completed > _DB_MAX_YEAR:
+            tool_hints.append(
+                f"- Year {last_completed} is NOT in the database"
+                " → use google_search_agent"
+            )
+        else:
+            tool_hints.append(
+                f"- Year {last_completed} is in the database"
+                " → use query_f1_history_template or query_f1_history"
+            )
+
+    # "últimas N temporadas" / "last N seasons"
+    m = _LAST_N_SEASONS_RE.search(user_text)
+    if m:
+        n = int(m.group(2))
+        from_year = current_year - n
+        to_year = last_completed
+        resolutions.append(
+            f"- 'Last {n}' = seasons {from_year} through {to_year}"
+            " (all completed)"
+        )
+        db_years = [y for y in range(from_year, to_year + 1) if y <= _DB_MAX_YEAR]
+        web_years = [y for y in range(from_year, to_year + 1) if y > _DB_MAX_YEAR]
+        if db_years and web_years:
+            tool_hints.append(
+                f"- DB (query_f1_history_template): {db_years[0]}-{db_years[-1]}"
+            )
+            tool_hints.append(
+                f"- Web (google_search_agent): {web_years[0]}-{web_years[-1]}"
+            )
+            tool_hints.append("- Combine BOTH into a single unified answer")
+        elif web_years:
+            tool_hints.append(
+                f"- All years ({web_years[0]}-{web_years[-1]}) need"
+                " google_search_agent"
+            )
+        elif db_years:
+            tool_hints.append(
+                f"- All years ({db_years[0]}-{db_years[-1]}) are in the database"
+            )
+
+    # "campeão atual" / "current champion"
+    if _CURRENT_CHAMPION_RE.search(user_text):
+        resolutions.append(
+            f"- 'Current/reigning champion' = the {last_completed} champion"
+            f" (season COMPLETED)"
+        )
+        if last_completed > _DB_MAX_YEAR:
+            tool_hints.append(
+                f"- {last_completed} champion: use google_search_agent"
+            )
+
+    # "esta temporada" / "this season"
+    if _THIS_SEASON_RE.search(user_text):
+        resolutions.append(
+            f"- 'This/current season' = {current_year} (may be ongoing)"
+        )
+        tool_hints.append(
+            f"- {current_year} season: use google_search_agent"
+        )
+
+    if not resolutions:
+        return None
+
+    lines = [
+        "\n\n## Temporal resolution (pre-computed — TRUST THIS)\n"
+        "The user's question contains relative time references."
+        " Resolved values:",
+    ]
+    lines.extend(resolutions)
+    if tool_hints:
+        lines.append("\nTool routing:")
+        lines.extend(tool_hints)
+
+    return "\n".join(lines)
 
 
 def route_model(callback_context, llm_request):
@@ -289,7 +442,14 @@ def inject_corrections(callback_context, llm_request):
 
 def inject_runtime_temporal_context(callback_context, llm_request):
     """Before-model callback: inject dynamic date/year guidance every request."""
-    llm_request.append_instructions([_runtime_temporal_addendum()])
+    addenda = [_runtime_temporal_addendum()]
+
+    user_text = _extract_user_text(callback_context, llm_request)
+    resolution = _resolve_temporal_references(user_text)
+    if resolution:
+        addenda.append(resolution)
+
+    llm_request.append_instructions(addenda)
     return None
 
 

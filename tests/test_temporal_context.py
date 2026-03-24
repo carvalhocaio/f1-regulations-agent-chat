@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from f1_agent.callbacks import (
     _query_requires_web_data,
+    _resolve_temporal_references,
     _runtime_temporal_addendum,
     check_cache,
 )
@@ -50,11 +51,32 @@ class TemporalContextTests(unittest.TestCase):
     def test_query_does_not_require_web_for_historical_year(self):
         self.assertFalse(_query_requires_web_data("Who won the 2023 championship?"))
 
+    def test_query_requires_web_for_relative_temporal_pt(self):
+        self.assertTrue(
+            _query_requires_web_data("quem foi o campeão da última temporada?")
+        )
+
+    def test_query_requires_web_for_relative_temporal_en(self):
+        self.assertTrue(
+            _query_requires_web_data("who was the last season champion?")
+        )
+
+    def test_query_requires_web_for_current_champion(self):
+        self.assertTrue(
+            _query_requires_web_data("quem é o atual campeão?")
+        )
+
     @patch("f1_agent.callbacks._current_year", return_value=2026)
     def test_runtime_addendum_contains_dynamic_year(self, _mock_current_year):
         addendum = _runtime_temporal_addendum()
         self.assertIn("Current year: 2026", addendum)
         self.assertIn("Historical DB coverage: 1950-2024 only", addendum)
+
+    @patch("f1_agent.callbacks._current_year", return_value=2026)
+    def test_runtime_addendum_declares_last_season_completed(self, _mock):
+        addendum = _runtime_temporal_addendum()
+        self.assertIn("2025 F1 season is FULLY COMPLETED", addendum)
+        self.assertIn("OVERRIDES YOUR TRAINING DATA", addendum)
 
     @patch("f1_agent.callbacks._get_cache")
     def test_check_cache_bypasses_time_sensitive_queries(self, mock_get_cache):
@@ -79,6 +101,55 @@ class TemporalContextTests(unittest.TestCase):
         result = check_cache(ctx, req)
         self.assertIsNotNone(result)
         self.assertEqual(fake_cache.get_calls, 1)
+
+
+class TemporalResolutionTests(unittest.TestCase):
+    @patch("f1_agent.callbacks._current_year", return_value=2026)
+    def test_resolves_last_season_pt(self, _mock):
+        result = _resolve_temporal_references(
+            "quem foi o campeão da última temporada?"
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("2025", result)
+        self.assertIn("COMPLETED", result)
+        self.assertIn("google_search_agent", result)
+
+    @patch("f1_agent.callbacks._current_year", return_value=2026)
+    def test_resolves_last_season_en(self, _mock):
+        result = _resolve_temporal_references("who won last season?")
+        self.assertIsNotNone(result)
+        self.assertIn("2025", result)
+
+    @patch("f1_agent.callbacks._current_year", return_value=2026)
+    def test_resolves_last_n_seasons(self, _mock):
+        result = _resolve_temporal_references("últimos 3 campeões de pilotos")
+        self.assertIsNotNone(result)
+        self.assertIn("2023", result)
+        self.assertIn("2025", result)
+        # Should suggest both DB and web
+        self.assertIn("DB", result)
+        self.assertIn("google_search_agent", result)
+
+    @patch("f1_agent.callbacks._current_year", return_value=2026)
+    def test_resolves_current_champion(self, _mock):
+        result = _resolve_temporal_references("quem é o atual campeão?")
+        self.assertIsNotNone(result)
+        self.assertIn("2025", result)
+        self.assertIn("champion", result.lower())
+
+    @patch("f1_agent.callbacks._current_year", return_value=2026)
+    def test_resolves_this_season(self, _mock):
+        result = _resolve_temporal_references("como está esta temporada?")
+        self.assertIsNotNone(result)
+        self.assertIn("2026", result)
+
+    def test_returns_none_for_no_relative_terms(self):
+        result = _resolve_temporal_references("Quem venceu o GP de 2023?")
+        self.assertIsNone(result)
+
+    def test_returns_none_for_empty_text(self):
+        result = _resolve_temporal_references("")
+        self.assertIsNone(result)
 
 
 if __name__ == "__main__":
