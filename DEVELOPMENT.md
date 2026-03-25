@@ -192,7 +192,8 @@ uv run python -m unittest tests.test_fine_tuning -v
 | `test_model_error_callback.py` | 4 | Rate limit handling (429/503) |
 | `test_search_alias.py` | 3 | Compatibility alias fallback |
 | `test_artifact_path_resolution.py` | 4 | Flat vs nested artifact layouts |
-| `test_temporal_context.py` | 6 | Dynamic year injection and cache bypass for time-sensitive queries |
+| `test_temporal_context.py` | 20+ | Dynamic year injection, temporal resolution and cache bypass |
+| `test_sessions_contract.py` | 9 | Anonymous identity, TTL helpers, session service selection |
 
 ## Linting
 
@@ -289,6 +290,8 @@ For local development, keep `F1_TUNED_MODEL` unset so routing falls back to
 | File | Purpose |
 |------|---------|
 | `f1_agent/agent.py` | ADK agent definition — model, tools, callbacks, instruction loading |
+| `f1_agent/runner.py` | ADK runner setup with managed (Vertex) or in-memory sessions |
+| `f1_agent/sessions.py` | Session identity normalization (`user_id`, `session_id`, `client_id`) and TTL helpers |
 | `f1_agent/callbacks.py` | Before/after-model callbacks: routing, cache, corrections |
 | `f1_agent/cache.py` | Semantic answer cache (FAISS + SQLite with TTL) |
 | `f1_agent/tools.py` | Tool functions: `search_regulations`, `query_f1_history_template`, `query_f1_history` |
