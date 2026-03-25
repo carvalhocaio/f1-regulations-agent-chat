@@ -2,6 +2,7 @@
 
 import argparse
 import json
+from datetime import datetime
 
 import vertexai
 from google.cloud import secretmanager
@@ -77,22 +78,69 @@ def _display_name(agent_engine: object) -> str | None:
     return None
 
 
+def _created_at(agent_engine: object) -> datetime | None:
+    """Extract creation time across SDK object variations."""
+    candidates: list[object] = []
+
+    for attr in ("create_time", "createTime", "created_at", "createdAt"):
+        value = getattr(agent_engine, attr, None)
+        if value is not None:
+            candidates.append(value)
+
+    api_resource = getattr(agent_engine, "api_resource", None)
+    if api_resource is not None:
+        for attr in ("create_time", "createTime"):
+            value = getattr(api_resource, attr, None)
+            if value is not None:
+                candidates.append(value)
+        if isinstance(api_resource, dict):
+            for key in ("create_time", "createTime"):
+                value = api_resource.get(key)
+                if value is not None:
+                    candidates.append(value)
+
+    for value in candidates:
+        if isinstance(value, datetime):
+            return value
+        text = str(value)
+        if not text:
+            continue
+        try:
+            return datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+
+    return None
+
+
 def find_existing_agent(client: vertexai.Client, display_name: str) -> str | None:
     """Find an existing agent by display name, return resource_name or None."""
-    for engine in client.agent_engines.list(
-        config={"filter": f'display_name="{display_name}"'}
-    ):
+    matches: list[tuple[datetime, str]] = []
+
+    for engine in client.agent_engines.list():
         candidate_name = _resource_name(engine)
+        if not candidate_name:
+            continue
+
         listed_display_name = _display_name(engine)
 
         # Some SDK list responses may omit display_name fields.
-        if listed_display_name is None and candidate_name:
+        if listed_display_name is None:
             listed_display_name = _display_name(
                 client.agent_engines.get(name=candidate_name)
             )
 
-        if listed_display_name == display_name:
-            return candidate_name
+        if listed_display_name != display_name:
+            continue
+
+        created_at = _created_at(engine) or datetime.min
+        matches.append((created_at, candidate_name))
+
+    if matches:
+        # If there are duplicates, prefer the most recently created one.
+        matches.sort(key=lambda item: item[0], reverse=True)
+        return matches[0][1]
+
     return None
 
 
