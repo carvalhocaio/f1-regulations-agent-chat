@@ -33,6 +33,18 @@ def _resource_name(agent_engine: object) -> str | None:
     if name:
         return str(name)
 
+    api_resource = getattr(agent_engine, "api_resource", None)
+    if api_resource is not None:
+        api_name = getattr(api_resource, "name", None)
+        if api_name:
+            return str(api_name)
+
+        if isinstance(api_resource, dict):
+            for key in ("name", "resource_name", "resourceName"):
+                value = api_resource.get(key)
+                if value:
+                    return str(value)
+
     return None
 
 
@@ -46,12 +58,30 @@ def _display_name(agent_engine: object) -> str | None:
     if display_name:
         return str(display_name)
 
+    api_resource = getattr(agent_engine, "api_resource", None)
+    if api_resource is not None:
+        api_display_name = getattr(api_resource, "display_name", None)
+        if api_display_name:
+            return str(api_display_name)
+
+        api_display_name = getattr(api_resource, "displayName", None)
+        if api_display_name:
+            return str(api_display_name)
+
+        if isinstance(api_resource, dict):
+            for key in ("display_name", "displayName"):
+                value = api_resource.get(key)
+                if value:
+                    return str(value)
+
     return None
 
 
 def find_existing_agent(client: vertexai.Client, display_name: str) -> str | None:
     """Find an existing agent by display name, return resource_name or None."""
-    for engine in client.agent_engines.list():
+    for engine in client.agent_engines.list(
+        config={"filter": f'display_name="{display_name}"'}
+    ):
         candidate_name = _resource_name(engine)
         listed_display_name = _display_name(engine)
 
