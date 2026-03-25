@@ -5,7 +5,7 @@ import json
 
 import vertexai
 from google.cloud import secretmanager
-from vertexai import agent_engines
+from vertexai import types
 
 from f1_agent.agent import root_agent
 
@@ -18,12 +18,40 @@ def get_secret(project_id: str, secret_id: str, version: str = "latest") -> str:
     return response.payload.data.decode("UTF-8")
 
 
-def find_existing_agent(display_name: str) -> str | None:
-    """Find an existing agent by display name, return resource_name or None."""
-    for engine in agent_engines.list():
-        if engine.display_name == display_name:
-            return engine.resource_name
+def _resource_name(agent_engine: object) -> str | None:
+    """Extract resource name across SDK object variations."""
+    resource_name = getattr(agent_engine, "resource_name", None)
+    if resource_name:
+        return str(resource_name)
+
+    name = getattr(agent_engine, "name", None)
+    if name:
+        return str(name)
+
     return None
+
+
+def find_existing_agent(client: vertexai.Client, display_name: str) -> str | None:
+    """Find an existing agent by display name, return resource_name or None."""
+    for engine in client.agent_engines.list():
+        if engine.display_name == display_name:
+            return _resource_name(engine)
+    return None
+
+
+def build_agent_engine_config(
+    args: argparse.Namespace, env_vars: dict[str, str]
+) -> types.AgentEngineConfig:
+    """Build a shared Agent Engine config for create/update."""
+    return types.AgentEngineConfig(
+        requirements_file="requirements-deploy.txt",
+        extra_packages=["f1_agent", "vector_store", "f1_data"],
+        display_name=args.display_name,
+        description=args.description,
+        service_account=args.service_account,
+        env_vars=env_vars,
+        staging_bucket=args.staging_bucket,
+    )
 
 
 def main():
@@ -36,10 +64,9 @@ def main():
     parser.add_argument("--service-account", default=None)
     args = parser.parse_args()
 
-    vertexai.init(
+    client = vertexai.Client(
         project=args.project_id,
         location=args.location,
-        staging_bucket=args.staging_bucket,
     )
 
     # F1_TUNED_MODEL is optional — falls back to gemini-2.5-flash if not set
@@ -56,34 +83,29 @@ def main():
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
     }
 
-    extra_packages = ["f1_agent", "vector_store", "f1_data"]
-
-    existing = find_existing_agent(args.display_name)
+    config = build_agent_engine_config(args, env_vars)
+    existing = find_existing_agent(client, args.display_name)
 
     if existing:
         print(f"Updating existing agent: {existing}")
-        remote = agent_engines.get(existing)
-        remote.update(
+        client.agent_engines.update(
+            name=existing,
             agent_engine=root_agent,
-            requirements="requirements-deploy.txt",
-            extra_packages=extra_packages,
-            display_name=args.display_name,
-            description=args.description,
-            env_vars=env_vars,
+            config=config,
         )
         resource_name = existing
     else:
         print("Creating new agent...")
-        remote = agent_engines.create(
+        remote = client.agent_engines.create(
             agent_engine=root_agent,
-            requirements="requirements-deploy.txt",
-            extra_packages=extra_packages,
-            display_name=args.display_name,
-            description=args.description,
-            service_account=args.service_account,
-            env_vars=env_vars,
+            config=config,
         )
-        resource_name = remote.resource_name
+        resource_name = _resource_name(remote)
+
+    if not resource_name:
+        raise RuntimeError(
+            "Failed to resolve Agent Engine resource name from SDK response"
+        )
 
     print(f"Resource name: {resource_name}")
 

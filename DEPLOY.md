@@ -221,26 +221,11 @@ uv run python deployment/deploy.py \
 ### 5.1) Smoke test
 
 ```fish
-python -c '
-import os, asyncio, vertexai
-from vertexai import agent_engines
-
-vertexai.init(
-    project=os.environ["PROJECT_ID"],
-    location=os.environ["LOCATION"],
-)
-
-remote = agent_engines.get(os.environ["RESOURCE_NAME"])
-
-async def main():
-    async for event in remote.async_stream_query(
-        user_id="smoke-test",
-        message="Who has the most wins in F1 history?",
-    ):
-        print(event)
-
-asyncio.run(main())
-'
+uv run python deployment/smoke_agent_engine.py \
+  --project-id $PROJECT_ID \
+  --location $LOCATION \
+  --resource-name $RESOURCE_NAME \
+  --display-name "f1-agent"
 ```
 
 ---
@@ -311,11 +296,14 @@ uv run python deployment/deploy.py \
 set -x RESOURCE_NAME "projects/.../locations/us-central1/reasoningEngines/..."
 
 python -c '
-import os, vertexai
-from vertexai import agent_engines
+import os
+import vertexai
 
-vertexai.init(project=os.environ["PROJECT_ID"], location=os.environ["LOCATION"])
-agent_engines.delete(os.environ["RESOURCE_NAME"])
+client = vertexai.Client(
+    project=os.environ["PROJECT_ID"],
+    location=os.environ["LOCATION"],
+)
+client.agent_engines.delete(name=os.environ["RESOURCE_NAME"])
 print("Deleted:", os.environ["RESOURCE_NAME"])
 '
 ```
@@ -324,7 +312,7 @@ print("Deleted:", os.environ["RESOURCE_NAME"])
 
 ## Notes
 
-- **Reserved variables**: Never set `GOOGLE_CLOUD_PROJECT` or `GOOGLE_APPLICATION_CREDENTIALS` as env vars in the deploy. Use `vertexai.init()`.
+- **Reserved variables**: Never set `GOOGLE_CLOUD_PROJECT` or `GOOGLE_APPLICATION_CREDENTIALS` as env vars in the deploy. Use `vertexai.Client(...)` with explicit `project` and `location`.
 - **Region**: Agent Engine must use the same region as the staging bucket.
 - **LLM model version**: Production uses `gemini-2.5-pro` for complex queries and the fine-tuned Flash endpoint (`F1_TUNED_MODEL`) for simple queries. Model routing is automatic via callbacks.
 - **Fine-tuned model**: The `f1-tuned-model` secret is optional. If not set, simple queries fall back to `gemini-2.5-flash`. See [DEVELOPMENT.md](./DEVELOPMENT.md#fine-tuning-production-only) for details.

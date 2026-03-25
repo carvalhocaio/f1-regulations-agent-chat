@@ -26,3 +26,6 @@ requirements-deploy.txt
 *.tfstate.backup
 .terraform.lock.hcl
 sa-key.json
+
+# Docs
+NEXT_STEPS.md

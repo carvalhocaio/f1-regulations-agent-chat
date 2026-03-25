@@ -70,6 +70,15 @@ jobs:
             --display-name "f1-agent" \
             --service-account "$SA_EMAIL"
 
+      - name: Smoke test deployed agent (read-only)
+        run: |
+          RESOURCE_NAME=$(uv run python -c 'import json; print(json.load(open("deployment_metadata.json"))["resource_name"])')
+          uv run python deployment/smoke_agent_engine.py \
+            --project-id "$PROJECT_ID" \
+            --location "$REGION" \
+            --resource-name "$RESOURCE_NAME" \
+            --display-name "f1-agent"
+
       - name: Upload deployment metadata
         uses: actions/upload-artifact@v4
         with:
