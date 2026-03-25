@@ -15,9 +15,25 @@ def _resource_name(agent_engine: object) -> str | None:
     if resource_name:
         return str(resource_name)
 
+    resource_name = getattr(agent_engine, "resourceName", None)
+    if resource_name:
+        return str(resource_name)
+
     name = getattr(agent_engine, "name", None)
     if name:
         return str(name)
+
+    return None
+
+
+def _display_name(agent_engine: object) -> str | None:
+    display_name = getattr(agent_engine, "display_name", None)
+    if display_name:
+        return str(display_name)
+
+    display_name = getattr(agent_engine, "displayName", None)
+    if display_name:
+        return str(display_name)
 
     return None
 
@@ -58,10 +74,11 @@ def main() -> None:
     if got_name != args.resource_name:
         raise RuntimeError(f"get() returned unexpected resource name: {got_name}")
 
-    if args.display_name and engine.display_name != args.display_name:
+    fetched_display_name = _display_name(engine)
+    if args.display_name and fetched_display_name != args.display_name:
         raise RuntimeError(
             "get() returned unexpected display_name: "
-            f"{engine.display_name} (expected {args.display_name})"
+            f"{fetched_display_name} (expected {args.display_name})"
         )
     print(f"Fetched: {got_name}")
 

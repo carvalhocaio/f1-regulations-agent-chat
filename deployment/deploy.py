@@ -24,6 +24,10 @@ def _resource_name(agent_engine: object) -> str | None:
     if resource_name:
         return str(resource_name)
 
+    resource_name = getattr(agent_engine, "resourceName", None)
+    if resource_name:
+        return str(resource_name)
+
     name = getattr(agent_engine, "name", None)
     if name:
         return str(name)
@@ -31,11 +35,33 @@ def _resource_name(agent_engine: object) -> str | None:
     return None
 
 
+def _display_name(agent_engine: object) -> str | None:
+    """Extract display name across SDK object variations."""
+    display_name = getattr(agent_engine, "display_name", None)
+    if display_name:
+        return str(display_name)
+
+    display_name = getattr(agent_engine, "displayName", None)
+    if display_name:
+        return str(display_name)
+
+    return None
+
+
 def find_existing_agent(client: vertexai.Client, display_name: str) -> str | None:
     """Find an existing agent by display name, return resource_name or None."""
     for engine in client.agent_engines.list():
-        if engine.display_name == display_name:
-            return _resource_name(engine)
+        candidate_name = _resource_name(engine)
+        listed_display_name = _display_name(engine)
+
+        # Some SDK list responses may omit display_name fields.
+        if listed_display_name is None and candidate_name:
+            listed_display_name = _display_name(
+                client.agent_engines.get(name=candidate_name)
+            )
+
+        if listed_display_name == display_name:
+            return candidate_name
     return None
 
 
