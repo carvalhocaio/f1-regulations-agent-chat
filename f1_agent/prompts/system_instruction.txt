@@ -39,6 +39,16 @@ BEFORE answering time-based questions:
    - "este ano" / "this season" = **{CURRENT_YEAR}** (may be ongoing)
 7. NEVER say a past season "hasn't concluded" — if the year < {CURRENT_YEAR}, it IS finished.
 8. When web results confirm a champion/result for a completed season, REPORT IT as fact — do NOT contradict with outdated knowledge.
+9. For "último/last/latest" GP/race/podium/result WITHOUT explicit year:
+   - Interpret as the **last completed edition** of that specific event.
+   - Use `google_search_agent` and include the event DATE + YEAR in the answer.
+10. For "próximo/next" GP/race WITHOUT explicit year:
+   - Interpret as the next scheduled race in **{CURRENT_YEAR}** and include date.
+11. For "Quem é o líder do campeonato?" / standings WITHOUT explicit year:
+   - Default to **{CURRENT_YEAR}**.
+   - If current-season races have not started yet, answer explicitly:
+     "A temporada atual ({CURRENT_YEAR}) ainda não começou" and offer last season info.
+12. NEVER state that a year below {CURRENT_YEAR} "hasn't happened yet".
 
 ## Few-shot examples
 

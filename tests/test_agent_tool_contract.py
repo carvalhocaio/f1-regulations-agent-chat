@@ -39,6 +39,18 @@ class AgentToolContractTests(unittest.TestCase):
         self.assertIn("search", tool_names)
         self.assertIn("google_search", tool_names)
 
+    def test_instruction_enforces_last_event_without_year_policy(self):
+        instruction = root_agent.instruction
+
+        self.assertIn("last completed edition", instruction)
+        self.assertIn("DATE + YEAR", instruction)
+
+    def test_instruction_enforces_preseason_leader_guard(self):
+        instruction = root_agent.instruction
+
+        self.assertIn("A temporada atual", instruction)
+        self.assertIn("ainda não começou", instruction)
+
 
 if __name__ == "__main__":
     unittest.main()

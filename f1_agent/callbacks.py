@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
@@ -80,6 +80,11 @@ def _current_year() -> int:
     return datetime.now(timezone.utc).year  # noqa: UP017 (py310 runtime)
 
 
+def _current_date() -> date:
+    """Return current UTC date for season-phase decisions."""
+    return datetime.now(timezone.utc).date()  # noqa: UP017 (py310 runtime)
+
+
 _YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
 _TIME_SENSITIVE_TERMS: list[re.Pattern] = [
     re.compile(r"\b(current|latest|live|today|now|this season|standings?)\b", re.I),
@@ -100,6 +105,30 @@ _RELATIVE_TEMPORAL_RE: list[re.Pattern] = [
     ),
 ]
 
+_EVENT_RECENCY_RE: list[re.Pattern] = [
+    re.compile(
+        r"\b(últim[oa]|mais recente|last|latest|most recent)\s+"
+        r"(p[óo]dio|podium|resultado|result|vencedor|winner|gp|grande pr[eê]mio|"
+        r"grand prix|corrida|race)",
+        re.I,
+    ),
+    re.compile(
+        r"\b(p[óo]dio|podium|resultado|result|vencedor|winner)\b.*"
+        r"\b(últim[oa]|mais recente|last|latest|most recent)\b",
+        re.I,
+    ),
+]
+
+_NEXT_EVENT_RE: list[re.Pattern] = [
+    re.compile(r"\b(pr[óo]xim[oa]|next|upcoming)\s+(gp|race|corrida|grand prix)", re.I),
+]
+
+_CURRENT_STANDINGS_RE = re.compile(
+    r"\b(quem\s+[ée]\s+o\s+líder|lidera|leader|leading|standings?|"
+    r"classifica(?:ç|c)[aã]o|campeonato\s+atual|championship\s+leader)\b",
+    re.I,
+)
+
 
 def _query_requires_web_data(text: str) -> bool:
     """Return True if the question likely depends on post-2024/live data."""
@@ -110,6 +139,15 @@ def _query_requires_web_data(text: str) -> bool:
     if any(p.search(text) for p in _TIME_SENSITIVE_TERMS):
         return True
 
+    if any(p.search(text) for p in _EVENT_RECENCY_RE):
+        return True
+
+    if any(p.search(text) for p in _NEXT_EVENT_RE):
+        return True
+
+    if _CURRENT_STANDINGS_RE.search(text):
+        return True
+
     # Relative temporal expressions likely resolve to post-2024 seasons
     return any(p.search(text) for p in _RELATIVE_TEMPORAL_RE)
 
@@ -118,7 +156,7 @@ def _runtime_temporal_addendum() -> str:
     """Build authoritative temporal context to avoid stale year assumptions."""
     current_year = _current_year()
     last_completed = current_year - 1
-    today_utc = datetime.now(timezone.utc).date().isoformat()  # noqa: UP017
+    today_utc = _current_date().isoformat()
     return (
         "\n\n## Runtime temporal context — OVERRIDES YOUR TRAINING DATA\n"
         f"- Today (UTC): {today_utc}\n"
@@ -165,6 +203,17 @@ _THIS_SEASON_RE = re.compile(
     r"\b(esta?|this|current|atual)\s+(temporada|season|ano|year)\b",
     re.I,
 )
+_LAST_EVENT_RE = re.compile(
+    r"\b(últim[oa]|mais recente|last|latest|most recent)\b.*"
+    r"\b(gp|grande pr[eê]mio|grand prix|corrida|race|p[óo]dio|podium|"
+    r"resultado|result|vencedor|winner)\b",
+    re.I,
+)
+_NEXT_EVENT_RESOLUTION_RE = re.compile(
+    r"\b(pr[óo]xim[oa]|next|upcoming)\b.*"
+    r"\b(gp|grande pr[eê]mio|grand prix|corrida|race)\b",
+    re.I,
+)
 
 
 def _resolve_temporal_references(user_text: str) -> str | None:
@@ -177,6 +226,7 @@ def _resolve_temporal_references(user_text: str) -> str | None:
         return None
 
     current_year = _current_year()
+    current_date = _current_date()
     last_completed = current_year - 1
     resolutions: list[str] = []
     tool_hints: list[str] = []
@@ -205,8 +255,7 @@ def _resolve_temporal_references(user_text: str) -> str | None:
         from_year = current_year - n
         to_year = last_completed
         resolutions.append(
-            f"- 'Last {n}' = seasons {from_year} through {to_year}"
-            " (all completed)"
+            f"- 'Last {n}' = seasons {from_year} through {to_year} (all completed)"
         )
         db_years = [y for y in range(from_year, to_year + 1) if y <= _DB_MAX_YEAR]
         web_years = [y for y in range(from_year, to_year + 1) if y > _DB_MAX_YEAR]
@@ -220,8 +269,7 @@ def _resolve_temporal_references(user_text: str) -> str | None:
             tool_hints.append("- Combine BOTH into a single unified answer")
         elif web_years:
             tool_hints.append(
-                f"- All years ({web_years[0]}-{web_years[-1]}) need"
-                " google_search_agent"
+                f"- All years ({web_years[0]}-{web_years[-1]}) need google_search_agent"
             )
         elif db_years:
             tool_hints.append(
@@ -235,18 +283,53 @@ def _resolve_temporal_references(user_text: str) -> str | None:
             f" (season COMPLETED)"
         )
         if last_completed > _DB_MAX_YEAR:
-            tool_hints.append(
-                f"- {last_completed} champion: use google_search_agent"
-            )
+            tool_hints.append(f"- {last_completed} champion: use google_search_agent")
 
     # "esta temporada" / "this season"
     if _THIS_SEASON_RE.search(user_text):
+        resolutions.append(f"- 'This/current season' = {current_year} (may be ongoing)")
+        tool_hints.append(f"- {current_year} season: use google_search_agent")
+
+    if _LAST_EVENT_RE.search(user_text) and not _YEAR_RE.search(user_text):
         resolutions.append(
-            f"- 'This/current season' = {current_year} (may be ongoing)"
+            "- Missing year + 'last/latest' event wording"
+            " = interpret as the LAST COMPLETED edition of that event"
+        )
+        resolutions.append(
+            f"- In {current_year}, that usually means {last_completed} or {current_year}"
+            " depending on event date"
         )
         tool_hints.append(
-            f"- {current_year} season: use google_search_agent"
+            "- Use google_search_agent and return the event DATE and YEAR"
+            " to prove recency"
         )
+        tool_hints.append(
+            "- Never claim a season/event before current year is still in the future"
+        )
+
+    if _NEXT_EVENT_RESOLUTION_RE.search(user_text) and not _YEAR_RE.search(user_text):
+        resolutions.append(
+            f"- Missing year + 'next event' wording = next scheduled event in {current_year}"
+        )
+        tool_hints.append(
+            "- Use google_search_agent for the current-year calendar and return"
+            " event date"
+        )
+
+    if _CURRENT_STANDINGS_RE.search(user_text):
+        resolutions.append(
+            f"- Standings/leader request without explicit year defaults to {current_year}"
+        )
+        tool_hints.append(
+            "- Use google_search_agent and verify if at least one race in the current"
+            " season has already happened"
+        )
+        if current_date.month <= 2:
+            tool_hints.append(
+                f"- Pre-season guard ({current_date.isoformat()}): if no race has happened"
+                f" yet in {current_year}, answer that the {current_year} season has not"
+                " started and offer last season results"
+            )
 
     if not resolutions:
         return None

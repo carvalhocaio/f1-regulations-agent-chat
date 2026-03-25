@@ -1,4 +1,5 @@
 import unittest
+from datetime import date
 from unittest.mock import patch
 
 from f1_agent.callbacks import (
@@ -57,14 +58,18 @@ class TemporalContextTests(unittest.TestCase):
         )
 
     def test_query_requires_web_for_relative_temporal_en(self):
-        self.assertTrue(
-            _query_requires_web_data("who was the last season champion?")
-        )
+        self.assertTrue(_query_requires_web_data("who was the last season champion?"))
 
     def test_query_requires_web_for_current_champion(self):
+        self.assertTrue(_query_requires_web_data("quem é o atual campeão?"))
+
+    def test_query_requires_web_for_last_event_without_year(self):
         self.assertTrue(
-            _query_requires_web_data("quem é o atual campeão?")
+            _query_requires_web_data("Qual foi o último pódio do GP de São Paulo?")
         )
+
+    def test_query_requires_web_for_next_gp_without_year(self):
+        self.assertTrue(_query_requires_web_data("Qual é o próximo GP?"))
 
     @patch("f1_agent.callbacks._current_year", return_value=2026)
     def test_runtime_addendum_contains_dynamic_year(self, _mock_current_year):
@@ -106,9 +111,7 @@ class TemporalContextTests(unittest.TestCase):
 class TemporalResolutionTests(unittest.TestCase):
     @patch("f1_agent.callbacks._current_year", return_value=2026)
     def test_resolves_last_season_pt(self, _mock):
-        result = _resolve_temporal_references(
-            "quem foi o campeão da última temporada?"
-        )
+        result = _resolve_temporal_references("quem foi o campeão da última temporada?")
         self.assertIsNotNone(result)
         self.assertIn("2025", result)
         self.assertIn("COMPLETED", result)
@@ -142,6 +145,26 @@ class TemporalResolutionTests(unittest.TestCase):
         result = _resolve_temporal_references("como está esta temporada?")
         self.assertIsNotNone(result)
         self.assertIn("2026", result)
+
+    @patch("f1_agent.callbacks._current_date", return_value=date(2026, 6, 1))
+    @patch("f1_agent.callbacks._current_year", return_value=2026)
+    def test_resolves_last_event_without_year_as_completed_edition(
+        self, _mock_year, _mock_date
+    ):
+        result = _resolve_temporal_references(
+            "Qual foi o último pódio do GP de São Paulo?"
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("LAST COMPLETED edition", result)
+        self.assertIn("event DATE and YEAR", result)
+
+    @patch("f1_agent.callbacks._current_date", return_value=date(2027, 1, 15))
+    @patch("f1_agent.callbacks._current_year", return_value=2027)
+    def test_preseason_guard_for_current_standings(self, _mock_year, _mock_date):
+        result = _resolve_temporal_references("Quem é o líder do campeonato?")
+        self.assertIsNotNone(result)
+        self.assertIn("Pre-season guard", result)
+        self.assertIn("season has not started", result)
 
     def test_returns_none_for_no_relative_terms(self):
         result = _resolve_temporal_references("Quem venceu o GP de 2023?")
