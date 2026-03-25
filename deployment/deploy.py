@@ -5,6 +5,7 @@ import json
 
 import vertexai
 from google.cloud import secretmanager
+from google.genai import errors as genai_errors
 from vertexai import types
 
 from f1_agent.agent import root_agent
@@ -70,7 +71,7 @@ def build_agent_engine_config(
 ) -> types.AgentEngineConfig:
     """Build a shared Agent Engine config for create/update."""
     return types.AgentEngineConfig(
-        requirements_file="requirements-deploy.txt",
+        requirements="requirements-deploy.txt",
         extra_packages=["f1_agent", "vector_store", "f1_data"],
         display_name=args.display_name,
         description=args.description,
@@ -78,6 +79,23 @@ def build_agent_engine_config(
         env_vars=env_vars,
         staging_bucket=args.staging_bucket,
     )
+
+
+def _without_service_account(
+    config: types.AgentEngineConfig,
+) -> types.AgentEngineConfig:
+    """Clone config without service account for fallback deploy."""
+    payload = config.model_dump(exclude_none=True)
+    payload.pop("service_account", None)
+    return types.AgentEngineConfig.model_validate(payload)
+
+
+def _is_service_account_actas_error(exc: Exception) -> bool:
+    """Return true when error indicates missing iam.serviceAccountUser."""
+    if not isinstance(exc, genai_errors.ClientError):
+        return False
+    message = str(exc).lower()
+    return "permission to act as service_account" in message
 
 
 def main():
@@ -114,18 +132,45 @@ def main():
 
     if existing:
         print(f"Updating existing agent: {existing}")
-        client.agent_engines.update(
-            name=existing,
-            agent=root_agent,
-            config=config,
-        )
+        try:
+            client.agent_engines.update(
+                name=existing,
+                agent=root_agent,
+                config=config,
+            )
+        except Exception as exc:
+            if args.service_account and _is_service_account_actas_error(exc):
+                print(
+                    "Warning: missing iam.serviceAccountUser on configured service "
+                    "account; retrying update without explicit service_account"
+                )
+                client.agent_engines.update(
+                    name=existing,
+                    agent=root_agent,
+                    config=_without_service_account(config),
+                )
+            else:
+                raise
         resource_name = existing
     else:
         print("Creating new agent...")
-        remote = client.agent_engines.create(
-            agent=root_agent,
-            config=config,
-        )
+        try:
+            remote = client.agent_engines.create(
+                agent=root_agent,
+                config=config,
+            )
+        except Exception as exc:
+            if args.service_account and _is_service_account_actas_error(exc):
+                print(
+                    "Warning: missing iam.serviceAccountUser on configured service "
+                    "account; retrying create without explicit service_account"
+                )
+                remote = client.agent_engines.create(
+                    agent=root_agent,
+                    config=_without_service_account(config),
+                )
+            else:
+                raise
         resource_name = _resource_name(remote)
 
     if not resource_name:

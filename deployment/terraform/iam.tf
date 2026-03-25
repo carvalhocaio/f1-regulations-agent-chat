@@ -19,3 +19,9 @@ resource "google_project_iam_member" "agent_roles" {
   role     = each.value
   member   = "serviceAccount:${google_service_account.agent.email}"
 }
+
+resource "google_service_account_iam_member" "agent_can_act_as_itself" {
+  service_account_id = google_service_account.agent.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.agent.email}"
+}
