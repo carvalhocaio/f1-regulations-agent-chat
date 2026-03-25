@@ -79,27 +79,37 @@ def _session_name(session: object) -> str | None:
     return None
 
 
+def _is_session_resource_name(name: str | None) -> bool:
+    return bool(name and "/sessions/" in name)
+
+
 def _session_user_id(session: object) -> str | None:
     value = getattr(session, "user_id", None)
+    if value:
+        return str(value)
+    value = getattr(session, "userId", None)
     if value:
         return str(value)
     if isinstance(session, dict):
         dict_value = session.get("user_id")
         if dict_value:
             return str(dict_value)
+        dict_value = session.get("userId")
+        if dict_value:
+            return str(dict_value)
     return None
 
 
 def _extract_session_name(create_response: object) -> str | None:
-    direct = _session_name(create_response)
-    if direct:
-        return direct
-
     nested_response = getattr(create_response, "response", None)
     if nested_response is not None:
         nested_name = _session_name(nested_response)
-        if nested_name:
+        if _is_session_resource_name(nested_name):
             return nested_name
+
+    direct = _session_name(create_response)
+    if _is_session_resource_name(direct):
+        return direct
 
     return None
 
@@ -171,7 +181,10 @@ def main() -> None:
 
     session_name = _extract_session_name(created)
     if not session_name:
-        raise RuntimeError("sessions.create() did not return a session name")
+        raise RuntimeError(
+            "sessions.create() did not return a session resource name "
+            "(expected .../sessions/{id})"
+        )
 
     session_id = session_name.split("/")[-1]
     got_session = client.agent_engines.sessions.get(name=session_name)
