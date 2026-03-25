@@ -116,14 +116,14 @@ def main():
         print(f"Updating existing agent: {existing}")
         client.agent_engines.update(
             name=existing,
-            agent_engine=root_agent,
+            agent=root_agent,
             config=config,
         )
         resource_name = existing
     else:
         print("Creating new agent...")
         remote = client.agent_engines.create(
-            agent_engine=root_agent,
+            agent=root_agent,
             config=config,
         )
         resource_name = _resource_name(remote)
