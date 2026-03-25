@@ -56,6 +56,10 @@ This generates:
 ```bash
 make run
 # or: uv run adk web f1_agent
+
+# With managed Vertex sessions (persistent context)
+# Requires GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, GOOGLE_CLOUD_AGENT_ENGINE_ID
+make run-managed
 ```
 
 Opens the ADK web UI at `http://localhost:8000`.
@@ -137,6 +141,17 @@ Chunking is article-aware: separators prioritize `Article X.Y` boundaries, and a
 - **Storage**: Corrections stored in `callback_context.state["f1_corrections"]` (per-session)
 - **Injection**: Before each LLM call, stored corrections are appended to the system instruction
 - **Cap**: Maximum 20 corrections per session
+
+### Managed Sessions (A2)
+
+`f1_agent/sessions.py` standardizes identity and session wiring for persistent context:
+
+- `resolve_user_id(user_id, client_id)` — canonical user identity (supports anonymous mode)
+- `build_session_identity(...)` — normalized `user_id/session_id` contract for clients
+- `session_ttl_config(ttl_seconds)` — TTL payload helper for Vertex session creation
+- `build_adk_session_service()` — uses `VertexAiSessionService` when env is configured; otherwise falls back to in-memory sessions
+
+For no-login clients, keep a stable browser `client_id` and derive deterministic anonymous `user_id` (`anon-<hash>`).
 
 ### SQL Templates
 

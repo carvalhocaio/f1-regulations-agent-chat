@@ -225,8 +225,15 @@ uv run python deployment/smoke_agent_engine.py \
   --project-id $PROJECT_ID \
   --location $LOCATION \
   --resource-name $RESOURCE_NAME \
-  --display-name "f1-agent"
+  --display-name "f1-agent" \
+  --user-id "smoke-user" \
+  --session-ttl-seconds 864000
 ```
+
+This smoke test now validates:
+- Agent Engine list/get
+- Sessions create/get/list/delete (managed)
+- TTL payload applied on session creation
 
 ---
 
@@ -319,3 +326,4 @@ print("Deleted:", os.environ["RESOURCE_NAME"])
 - **Scaling**: Adjust `min_instances` and `max_instances` according to demand.
 - **Data artifacts**: If PDFs or CSVs are updated, re-run `build_index.py` locally and upload the new artifacts to the bucket.
 - **Telemetry**: The deploy already enables traces and logs via OpenTelemetry. Access them in the Vertex AI console under **Dashboard** and **Traces**.
+- **Session contract**: client should propagate `user_id` + `session_id` on every request. If the app has no login, use a stable browser `client_id` and derive `user_id=anon-<hash(client_id)>`.

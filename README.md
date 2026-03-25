@@ -22,6 +22,7 @@ Built with [Google ADK](https://google.github.io/adk-docs/) and powered by Gemin
 - **Model routing** — simple queries go to Flash (or fine-tuned Flash), complex ones stay on Pro
 - **Semantic cache** — near-instant responses for repeated/similar questions (cosine similarity > 0.92)
 - **Session corrections** — detects when users correct the agent (PT/EN) and avoids repeating mistakes
+- **Managed sessions (A2)** — supports Vertex AI Sessions (`user_id` + `session_id`) with TTL for persistent context
 - **Runtime temporal context** — injects current UTC date/year on every request to avoid stale year assumptions after deploy
 - **Temporal reasoning** — automatically splits questions: `1950-2024` via SQLite, `2025+` via web search
 
@@ -63,6 +64,22 @@ ADK Agent (Gemini)
     v
 Unified answer + sources
 ```
+
+## Session Contract (No Login)
+
+For clients without authentication, keep sessions persistent by sending:
+
+- `client_id` — stable browser/device id stored in localStorage or cookie
+- `user_id` — optional; if absent, backend derives deterministic anonymous id (`anon-<hash(client_id)>`)
+- `session_id` — optional on first call; required on follow-ups to resume context
+
+Recommended flow:
+
+1. First call: send `client_id`, omit `session_id`
+2. Backend creates Vertex session with TTL and returns `session_id`
+3. Client stores `session_id` and sends it on subsequent calls
+
+This enables cross-request persistence for callback state (for example, correction memory).
 
 ## Stack
 
@@ -141,8 +158,10 @@ For detailed setup instructions, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 ```text
 f1-regulations-agent-chat/
 ├── f1_agent/
-│   ├── agent.py               # ADK agent definition, tools, and callbacks
+│   ├── agent.py                # ADK agent definition, tools, and callbacks
 │   ├── callbacks.py            # Model routing, semantic cache, session corrections
+│   ├── runner.py               # ADK runner wiring for managed/local sessions
+│   ├── sessions.py             # user_id/session_id normalization helpers
 │   ├── cache.py                # SemanticCache (FAISS + SQLite, TTL-based)
 │   ├── tools.py                # Agent tools (regulations, history, search)
 │   ├── rag.py                  # PDF loading, chunking, FAISS + BM25 hybrid search
@@ -154,7 +173,7 @@ f1-regulations-agent-chat/
 │       ├── schema.py           # Vertex AI SFT dataset format helpers
 │       ├── generate_dataset.py # Auto-generates Q&A pairs from real F1 database
 │       └── tune.py             # Launches SFT job on Vertex AI
-├── tests/                      # 83 unit tests (10 test modules)
+├── tests/                      # Unit tests (routing, cache, tools, sessions, temporal logic)
 ├── deployment/
 │   ├── deploy.py               # Vertex AI Agent Engine deploy script
 │   └── terraform/              # GCP infrastructure as code
