@@ -195,7 +195,31 @@ Agent Engine requires a flat `requirements.txt` (no `pyproject.toml` extras). Ge
 uv export --frozen --no-hashes --no-dev --no-editable --no-annotate --no-header --no-emit-project -o requirements-deploy.txt
 ```
 
-## 5) Manual deploy (local)
+## 5) Prepare Vertex RAG corpus (optional but recommended)
+
+Use this once (or when regulation PDFs change) to externalize regulations retrieval.
+
+> For new projects, RAG Engine in `us-central1`, `us-east1`, and `us-east4` may require allowlist access. If you hit that error, run corpus ingestion in `europe-west4` or `europe-west3`.
+
+```fish
+uv run python deployment/rag_engine_ingest.py \
+  --project-id $PROJECT_ID \
+  --location "europe-west4" \
+  --display-name "f1-regulations-rag" \
+  --paths "gs://<BUCKET>/regulations/" \
+  --chunk-size 1024 \
+  --chunk-overlap 200
+```
+
+Copy the returned corpus resource name:
+
+```text
+projects/<PROJECT_NUMBER>/locations/europe-west4/ragCorpora/<RAG_CORPUS_ID>
+```
+
+---
+
+## 6) Manual deploy (local)
 
 For direct deploy without CI/CD:
 
@@ -215,10 +239,13 @@ uv run python deployment/deploy.py \
   --location $LOCATION \
   --staging-bucket $STAGING_BUCKET \
   --display-name "f1-agent" \
-  --service-account $SA_EMAIL
+  --service-account $SA_EMAIL \
+  --rag-backend auto \
+  --rag-corpus "projects/<PROJECT_NUMBER>/locations/europe-west4/ragCorpora/<RAG_CORPUS_ID>" \
+  --rag-location "europe-west4"
 ```
 
-### 5.1) Smoke test
+### 6.1) Smoke test
 
 ```fish
 uv run python deployment/smoke_agent_engine.py \
@@ -237,9 +264,9 @@ This smoke test now validates:
 
 ---
 
-## 6) CI/CD — GitHub Actions
+## 7) CI/CD — GitHub Actions
 
-### 6.1) GitHub Secrets
+### 7.1) GitHub Secrets
 
 Configure under **Settings > Secrets and variables > Actions**:
 
@@ -250,15 +277,17 @@ Configure under **Settings > Secrets and variables > Actions**:
 | `GCP_REGION` | `us-central1` |
 | `GCP_STAGING_BUCKET` | `gs://f1-agent-staging` |
 | `GCP_SA_EMAIL` | `f1-agent-engine@f1-regulations-agent-chat.iam.gserviceaccount.com` |
+| `GCP_RAG_CORPUS` | `projects/<PROJECT_NUMBER>/locations/europe-west4/ragCorpora/<RAG_CORPUS_ID>` (optional) |
+| `GCP_RAG_REGION` | `europe-west4` (optional; defaults to `GCP_REGION`) |
 
 > **Recommended**: Use [Workload Identity Federation](https://github.com/google-github-actions/auth#workload-identity-federation) instead of SA key for keyless authentication.
 
-### 6.2) Workflows
+### 7.2) Workflows
 
 - **`.github/workflows/ci.yml`** — Lint and format check on PRs
-- **`.github/workflows/deploy.yml`** — Deploy to production on merge to `main` (requires environment approval)
+- **`.github/workflows/deploy.yml`** — Deploy to production on merge to `main` (requires environment approval). Pass `--rag-backend auto`, `--rag-corpus`, and optional `--rag-location`.
 
-### 6.3) Configure GitHub Environment
+### 7.3) Configure GitHub Environment
 
 Under **Settings > Environments**, create:
 
@@ -266,7 +295,7 @@ Under **Settings > Environments**, create:
 
 ---
 
-## 7) Upload artifacts to bucket
+## 8) Upload artifacts to bucket
 
 Since `vector_store/` and `f1_data/` are generated once and excluded from git, upload them to the artifacts bucket:
 
@@ -280,7 +309,7 @@ CI automatically downloads these artifacts before deploy (see "Download data art
 
 ---
 
-## 8) Update the agent
+## 9) Update the agent
 
 To update an already deployed agent without creating a new instance:
 
@@ -292,12 +321,15 @@ uv run python deployment/deploy.py \
   --location $LOCATION \
   --staging-bucket $STAGING_BUCKET \
   --display-name "f1-agent" \
-  --service-account $SA_EMAIL
+  --service-account $SA_EMAIL \
+  --rag-backend auto \
+  --rag-corpus "projects/<PROJECT_NUMBER>/locations/europe-west4/ragCorpora/<RAG_CORPUS_ID>" \
+  --rag-location "europe-west4"
 ```
 
 ---
 
-## 9) Delete agent
+## 10) Delete agent
 
 ```fish
 set -x RESOURCE_NAME "projects/.../locations/us-central1/reasoningEngines/..."
@@ -322,6 +354,8 @@ print("Deleted:", os.environ["RESOURCE_NAME"])
 - **Reserved variables**: Never set `GOOGLE_CLOUD_PROJECT` or `GOOGLE_APPLICATION_CREDENTIALS` as env vars in the deploy. Use `vertexai.Client(...)` with explicit `project` and `location`.
 - **Region**: Agent Engine must use the same region as the staging bucket.
 - **LLM model version**: Production uses `gemini-2.5-pro` for complex queries and the fine-tuned Flash endpoint (`F1_TUNED_MODEL`) for simple queries. Model routing is automatic via callbacks.
+- **RAG backend**: `F1_RAG_BACKEND=auto` is the recommended default. It prefers Vertex RAG when configured (`F1_RAG_CORPUS`) and falls back to local FAISS+BM25 for resilience.
+- **RAG location**: `F1_RAG_LOCATION` can be different from Agent Engine region; use `europe-west4` (or `europe-west3`) when `us-central1` is allowlist-restricted.
 - **Fine-tuned model**: The `f1-tuned-model` secret is optional. If not set, simple queries fall back to `gemini-2.5-flash`. See [DEVELOPMENT.md](./DEVELOPMENT.md#fine-tuning-production-only) for details.
 - **Scaling**: Adjust `min_instances` and `max_instances` according to demand.
 - **Data artifacts**: If PDFs or CSVs are updated, re-run `build_index.py` locally and upload the new artifacts to the bucket.

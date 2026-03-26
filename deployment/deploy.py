@@ -184,6 +184,34 @@ def main():
     parser.add_argument("--display-name", required=True)
     parser.add_argument("--description", default="F1 Regulations & History Agent")
     parser.add_argument("--service-account", default=None)
+    parser.add_argument(
+        "--rag-backend",
+        default="auto",
+        choices=["auto", "local", "vertex"],
+        help="RAG backend routing mode for regulations retrieval",
+    )
+    parser.add_argument(
+        "--rag-corpus",
+        default="",
+        help="Vertex RAG corpus resource name (required for vertex mode)",
+    )
+    parser.add_argument(
+        "--rag-location",
+        default="",
+        help="Optional Vertex RAG location override (defaults to --location)",
+    )
+    parser.add_argument(
+        "--rag-top-k",
+        type=int,
+        default=5,
+        help="Top-k retrieval docs for Vertex RAG",
+    )
+    parser.add_argument(
+        "--rag-vector-distance-threshold",
+        type=float,
+        default=None,
+        help="Optional Vertex RAG vector distance threshold",
+    )
     args = parser.parse_args()
 
     client = vertexai.Client(
@@ -201,9 +229,21 @@ def main():
     env_vars = {
         "GEMINI_API_KEY": get_secret(args.project_id, "google-api-key"),
         "F1_TUNED_MODEL": tuned_model,
+        "F1_RAG_BACKEND": args.rag_backend,
+        "F1_RAG_PROJECT_ID": args.project_id,
+        "F1_RAG_LOCATION": args.rag_location or args.location,
+        "F1_RAG_TOP_K": str(max(1, args.rag_top_k)),
         "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
     }
+
+    if args.rag_corpus:
+        env_vars["F1_RAG_CORPUS"] = args.rag_corpus
+
+    if args.rag_vector_distance_threshold is not None:
+        env_vars["F1_RAG_VECTOR_DISTANCE_THRESHOLD"] = str(
+            args.rag_vector_distance_threshold
+        )
 
     config = build_agent_engine_config(args, env_vars)
     existing = find_existing_agent(client, args.display_name)

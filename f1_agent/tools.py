@@ -1,9 +1,18 @@
 import json
+import logging
+import os
 import re
 
 from f1_agent import db
 from f1_agent.rag import hybrid_search
 from f1_agent.sql_templates import TEMPLATES, resolve_template
+
+logger = logging.getLogger(__name__)
+
+_RAG_BACKEND_ENV = "F1_RAG_BACKEND"
+_RAG_BACKEND_LOCAL = "local"
+_RAG_BACKEND_VERTEX = "vertex"
+_RAG_BACKEND_AUTO = "auto"
 
 _FORBIDDEN_RE = re.compile(
     r"^\s*(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|ATTACH|DETACH|PRAGMA|REPLACE|VACUUM|REINDEX)\b",
@@ -21,7 +30,21 @@ def search_regulations(query: str) -> dict:
     Args:
         query: The search query about F1 regulations.
     """
-    results = hybrid_search(query, k=5)
+    backend = _selected_rag_backend()
+
+    if backend == _RAG_BACKEND_LOCAL:
+        results = _search_regulations_local(query, k=5)
+    elif backend == _RAG_BACKEND_VERTEX:
+        results = _search_regulations_vertex(query, k=5)
+        if not results:
+            logger.warning(
+                "Vertex RAG returned no results; falling back to local search"
+            )
+            results = _search_regulations_local(query, k=5)
+    else:
+        results = _search_regulations_vertex(query, k=5)
+        if not results:
+            results = _search_regulations_local(query, k=5)
 
     if not results:
         return {"status": "no_results", "message": "No relevant regulations found."}
@@ -40,6 +63,29 @@ def search_regulations(query: str) -> dict:
         chunks.append(chunk)
 
     return {"status": "success", "results": chunks}
+
+
+def _selected_rag_backend() -> str:
+    raw = os.environ.get(_RAG_BACKEND_ENV, _RAG_BACKEND_AUTO).strip().lower()
+    if raw in {_RAG_BACKEND_LOCAL, _RAG_BACKEND_VERTEX, _RAG_BACKEND_AUTO}:
+        return raw
+    return _RAG_BACKEND_AUTO
+
+
+def _search_regulations_local(query: str, k: int = 5):
+    return hybrid_search(query, k=k)
+
+
+def _search_regulations_vertex(query: str, k: int = 5):
+    try:
+        from f1_agent.rag_vertex import vertex_hybrid_search
+
+        return vertex_hybrid_search(query, k=k)
+    except Exception:
+        logger.warning(
+            "Vertex RAG unavailable; falling back to local search", exc_info=True
+        )
+        return []
 
 
 def search(query: str | None = None, request: str | None = None) -> dict:

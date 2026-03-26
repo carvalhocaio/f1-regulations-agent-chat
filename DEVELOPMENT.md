@@ -71,6 +71,12 @@ Opens the ADK web UI at `http://localhost:8000`.
 | `GOOGLE_API_KEY` | Yes | — | Gemini API key for LLM and embeddings |
 | `GEMINI_EMBEDDING_MODEL` | No | `models/gemini-embedding-2-preview` | Embedding model for RAG and cache |
 | `F1_TUNED_MODEL` | No | `gemini-2.5-flash` | Fine-tuned model endpoint (**production only** — see [Fine-Tuning](#fine-tuning-production-only)) |
+| `F1_RAG_BACKEND` | No | `auto` | Regulations retrieval backend: `auto`, `local`, or `vertex` |
+| `F1_RAG_CORPUS` | No | — | Vertex RAG corpus resource name (required when Vertex retrieval is used) |
+| `F1_RAG_PROJECT_ID` | No | — | Explicit project for Vertex RAG client initialization |
+| `F1_RAG_LOCATION` | No | — | Explicit location for Vertex RAG client initialization |
+| `F1_RAG_TOP_K` | No | `5` | Top-k retrieved chunks for Vertex RAG |
+| `F1_RAG_VECTOR_DISTANCE_THRESHOLD` | No | — | Optional retrieval distance threshold for Vertex RAG |
 
 ## Generated Artifacts
 
@@ -133,6 +139,16 @@ Classification patterns for complex queries: comparisons (`vs`, `compare`, `dife
 
 Chunking is article-aware: separators prioritize `Article X.Y` boundaries, and article numbers are extracted into chunk metadata.
 
+### External RAG rollout (A4)
+
+`search_regulations` now supports a phased backend strategy:
+
+- `F1_RAG_BACKEND=local` — always use local FAISS+BM25 (`f1_agent/rag.py`)
+- `F1_RAG_BACKEND=vertex` — try Vertex RAG first; fallback to local if retrieval fails/returns empty
+- `F1_RAG_BACKEND=auto` (default) — prefer Vertex when configured, with automatic local fallback
+
+The Vertex adapter lives in `f1_agent/rag_vertex.py` and normalizes results to the same response shape used by existing tool consumers.
+
 ### Session Corrections
 
 `f1_agent/callbacks.py` detects when users correct the agent:
@@ -194,6 +210,7 @@ uv run python -m unittest tests.test_fine_tuning -v
 | `test_artifact_path_resolution.py` | 4 | Flat vs nested artifact layouts |
 | `test_temporal_context.py` | 20+ | Dynamic year injection, temporal resolution and cache bypass |
 | `test_sessions_contract.py` | 9 | Anonymous identity, TTL helpers, session service selection |
+| `test_rag_backend.py` | 3 | A4 backend routing and local fallback behavior |
 
 ## Linting
 
@@ -296,8 +313,10 @@ For local development, keep `F1_TUNED_MODEL` unset so routing falls back to
 | `f1_agent/cache.py` | Semantic answer cache (FAISS + SQLite with TTL) |
 | `f1_agent/tools.py` | Tool functions: `search_regulations`, `query_f1_history_template`, `query_f1_history` |
 | `f1_agent/rag.py` | RAG pipeline: PDF loading, article-aware chunking, FAISS + BM25 hybrid search |
+| `f1_agent/rag_vertex.py` | Vertex RAG adapter (`auto|local|vertex`) |
 | `f1_agent/db.py` | SQLite DB: schema builder (from Kaggle CSVs), read-only query execution |
 | `f1_agent/sql_templates.py` | 15 parameterized SQL templates for common F1 queries |
 | `f1_agent/prompts/system_instruction.txt` | Externalized system prompt with few-shot examples |
 | `deployment/deploy.py` | Vertex AI Agent Engine deploy/update script |
+| `deployment/rag_engine_ingest.py` | Creates/imports Vertex RAG corpus from GCS PDFs |
 | `build_index.py` | Generates `vector_store/` and `f1_data/` from source data in `docs/` |

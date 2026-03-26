@@ -7,8 +7,10 @@ on:
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: ${{ secrets.GCP_REGION }}
+  RAG_REGION: ${{ secrets.GCP_RAG_REGION }}
   STAGING_BUCKET: ${{ secrets.GCP_STAGING_BUCKET }}
   SA_EMAIL: ${{ secrets.GCP_SA_EMAIL }}
+  RAG_CORPUS: ${{ secrets.GCP_RAG_CORPUS }}
   ARTIFACTS_BUCKET: "${{ secrets.GCP_PROJECT_ID }}-artifacts"
 
 jobs:
@@ -70,7 +72,10 @@ jobs:
             --location "$REGION" \
             --staging-bucket "$STAGING_BUCKET" \
             --display-name "f1-agent" \
-            --service-account "$SA_EMAIL"
+            --service-account "$SA_EMAIL" \
+            --rag-backend "auto" \
+            --rag-corpus "$RAG_CORPUS" \
+            --rag-location "${RAG_REGION:-$REGION}"
 
       - name: Smoke test deployed agent (read-only)
         run: |

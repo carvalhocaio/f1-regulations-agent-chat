@@ -23,6 +23,7 @@ Built with [Google ADK](https://google.github.io/adk-docs/) and powered by Gemin
 - **Semantic cache** — near-instant responses for repeated/similar questions (cosine similarity > 0.92)
 - **Session corrections** — detects when users correct the agent (PT/EN) and avoids repeating mistakes
 - **Managed sessions (A2)** — supports Vertex AI Sessions (`user_id` + `session_id`) with TTL for persistent context
+- **RAG Engine rollout (A4)** — `search_regulations` supports phased routing (`auto|local|vertex`) with automatic fallback to local hybrid RAG
 - **Runtime temporal context** — injects current UTC date/year on every request to avoid stale year assumptions after deploy
 - **Temporal reasoning** — automatically splits questions: `1950-2024` via SQLite, `2025+` via web search
 
@@ -113,6 +114,14 @@ GOOGLE_API_KEY=your-key-here
 # Optional (production only). Keep unset locally unless you have
 # access to a valid Vertex tuned endpoint.
 # F1_TUNED_MODEL=projects/<PROJECT_NUMBER>/locations/us-central1/endpoints/<ENDPOINT_ID>
+
+# Optional (A4 phased rollout). Keep local by default.
+# F1_RAG_BACKEND=local           # local|auto|vertex
+# F1_RAG_CORPUS=projects/<PROJECT_NUMBER>/locations/us-central1/ragCorpora/<RAG_CORPUS_ID>
+# F1_RAG_PROJECT_ID=<PROJECT_ID>
+# F1_RAG_LOCATION=us-central1
+# F1_RAG_TOP_K=5
+# F1_RAG_VECTOR_DISTANCE_THRESHOLD=0.5
 EOF
 
 # 4. Add source data to docs/ (FIA PDFs + Kaggle CSVs)
@@ -165,6 +174,7 @@ f1-regulations-agent-chat/
 │   ├── cache.py                # SemanticCache (FAISS + SQLite, TTL-based)
 │   ├── tools.py                # Agent tools (regulations, history, search)
 │   ├── rag.py                  # PDF loading, chunking, FAISS + BM25 hybrid search
+│   ├── rag_vertex.py           # Vertex RAG adapter (A4 phased externalization)
 │   ├── db.py                   # SQLite schema/build/query helpers
 │   ├── sql_templates.py        # 15 pre-built SQL templates for common queries
 │   ├── prompts/
@@ -176,6 +186,7 @@ f1-regulations-agent-chat/
 ├── tests/                      # Unit tests (routing, cache, tools, sessions, temporal logic)
 ├── deployment/
 │   ├── deploy.py               # Vertex AI Agent Engine deploy script
+│   ├── rag_engine_ingest.py    # Vertex RAG corpus create/import helper
 │   └── terraform/              # GCP infrastructure as code
 ├── docs/                       # FIA PDFs + Kaggle CSV folder (input data)
 ├── vector_store/               # Generated FAISS artifacts (gitignored)
