@@ -13,6 +13,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from f1_agent.resilience import run_with_retry
+
 logger = logging.getLogger(__name__)
 
 _RESOURCE_NAME_RE = re.compile(
@@ -99,9 +101,13 @@ def build_dynamic_examples_addendum(
         return None, metadata
 
     try:
-        response = example_store.search_examples(
-            parameters={"stored_contents_example_key": question},
-            top_k=settings.top_k,
+        response = run_with_retry(
+            "example_store.search_examples",
+            lambda: example_store.search_examples(
+                parameters={"stored_contents_example_key": question},
+                top_k=settings.top_k,
+            ),
+            logger_instance=logger,
         )
     except Exception:
         logger.warning(

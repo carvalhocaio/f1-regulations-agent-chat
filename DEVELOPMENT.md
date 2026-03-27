@@ -125,7 +125,11 @@ After model:
   9. store_cache      — Cache the answer (TTL: 30 days static, 24h web)
 
 On error:
-  10. handle_rate_limit — User-friendly message for 429/503 errors
+  10. handle_rate_limit — User-friendly fallback after retry exhaustion (429/503)
+
+Runtime resilience layer:
+  - LLM runtime retries via Gemini `HttpRetryOptions` (exponential backoff + jitter)
+  - Tool/search retries + circuit breaker via `f1_agent.resilience`
 ```
 
 ### Model Routing

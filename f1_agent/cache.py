@@ -25,6 +25,8 @@ from decouple import config
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from pydantic import SecretStr
 
+from f1_agent.resilience import run_with_retry
+
 logger = logging.getLogger(__name__)
 
 _CACHE_DIR = Path(__file__).parent.parent / "f1_cache"
@@ -120,7 +122,11 @@ class SemanticCache:
         if not self._vectors:
             return None
 
-        q_vec = self._embed(question)
+        try:
+            q_vec = self._embed(question)
+        except Exception:
+            logger.warning("Cache embed failed on get; skipping cache", exc_info=True)
+            return None
 
         compatible_pairs = [
             (idx, row_id, vec)
@@ -177,7 +183,11 @@ class SemanticCache:
         web_source: bool = False,
     ) -> None:
         """Store a Q&A pair in the cache."""
-        q_vec = self._embed(question)
+        try:
+            q_vec = self._embed(question)
+        except Exception:
+            logger.warning("Cache embed failed on put; skipping cache", exc_info=True)
+            return
         ttl = _TTL_WEB if web_source else _TTL_STATIC
 
         blob = q_vec.tobytes()
@@ -202,7 +212,11 @@ class SemanticCache:
     # ── Internals ───────────────────────────────────────────────────────
 
     def _embed(self, text: str) -> np.ndarray:
-        result = self._embeddings.embed_query(text)
+        result = run_with_retry(
+            "semantic_cache.embed_query",
+            lambda: self._embeddings.embed_query(text),
+            logger_instance=logger,
+        )
         return np.array(result, dtype=np.float32)
 
     def _evict(self, row_id: int, vec_idx: int) -> None:

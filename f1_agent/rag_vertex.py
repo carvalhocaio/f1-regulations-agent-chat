@@ -1,7 +1,12 @@
+import logging
 import os
 from typing import Any
 
 from langchain_core.documents import Document
+
+from f1_agent.resilience import run_with_retry
+
+logger = logging.getLogger(__name__)
 
 _RAG_CORPUS_ENV = "F1_RAG_CORPUS"
 _RAG_PROJECT_ENV = "F1_RAG_PROJECT_ID"
@@ -21,12 +26,16 @@ def vertex_hybrid_search(query: str, k: int = 5) -> list[Document]:
     similarity_top_k = _int_env(_RAG_TOP_K_ENV, default=k)
     threshold = _float_env(_RAG_DISTANCE_THRESHOLD_ENV)
 
-    response = _call_retrieval_query(
-        rag_module=rag_module,
-        corpus_name=corpus_name,
-        query=query,
-        similarity_top_k=similarity_top_k,
-        threshold=threshold,
+    response = run_with_retry(
+        "rag_vertex.retrieval_query",
+        lambda: _call_retrieval_query(
+            rag_module=rag_module,
+            corpus_name=corpus_name,
+            query=query,
+            similarity_top_k=similarity_top_k,
+            threshold=threshold,
+        ),
+        logger_instance=logger,
     )
 
     contexts = list(getattr(response, "contexts", []) or [])

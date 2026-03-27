@@ -17,6 +17,8 @@ from typing import Any
 import vertexai
 from google.api_core import exceptions as gcp_exceptions
 
+from f1_agent.resilience import run_with_retry
+
 logger = logging.getLogger(__name__)
 
 _ENABLED_ENV = "F1_MEMORY_BANK_ENABLED"
@@ -205,18 +207,26 @@ def _retrieve_user_memories(
         # then fall back to scope-only retrieval.
         try:
             records = list(
-                client.agent_engines.memories.retrieve(
-                    name=settings.agent_engine_name,
-                    scope={"user_id": user_id},
-                    query=query_text,
-                    max_results=settings.fetch_limit,
+                run_with_retry(
+                    "memory_bank.retrieve_with_query",
+                    lambda: client.agent_engines.memories.retrieve(
+                        name=settings.agent_engine_name,
+                        scope={"user_id": user_id},
+                        query=query_text,
+                        max_results=settings.fetch_limit,
+                    ),
+                    logger_instance=logger,
                 )
             )
         except TypeError:
             records = list(
-                client.agent_engines.memories.retrieve(
-                    name=settings.agent_engine_name,
-                    scope={"user_id": user_id},
+                run_with_retry(
+                    "memory_bank.retrieve_scope_only",
+                    lambda: client.agent_engines.memories.retrieve(
+                        name=settings.agent_engine_name,
+                        scope={"user_id": user_id},
+                    ),
+                    logger_instance=logger,
                 )
             )
     except (
@@ -226,6 +236,9 @@ def _retrieve_user_memories(
         gcp_exceptions.ServiceUnavailable,
         gcp_exceptions.DeadlineExceeded,
     ):
+        logger.warning("Memory retrieval failed", exc_info=True)
+        return []
+    except Exception:
         logger.warning("Memory retrieval failed", exc_info=True)
         return []
 

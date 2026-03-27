@@ -8,11 +8,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+from collections import Counter
 from dataclasses import dataclass
 from statistics import mean
 from time import perf_counter
 
 import vertexai
+
+from f1_agent.resilience import classify_transient_error
 
 
 @dataclass
@@ -20,6 +23,9 @@ class RequestResult:
     ok: bool
     latency_seconds: float
     error: str | None = None
+    error_type: str | None = None
+    status_code: int | None = None
+    is_transient: bool = False
 
 
 def _percentile(values: list[float], p: float) -> float:
@@ -55,10 +61,14 @@ async def _run_one(
                 timeout=timeout_seconds,
             )
         except Exception as exc:
+            is_transient, status_code, error_type = classify_transient_error(exc)
             return RequestResult(
                 ok=False,
                 latency_seconds=perf_counter() - start,
                 error=f"{type(exc).__name__}: {exc}",
+                error_type=error_type,
+                status_code=status_code,
+                is_transient=is_transient,
             )
         return RequestResult(ok=True, latency_seconds=perf_counter() - start)
 
@@ -129,8 +139,59 @@ async def _run_load(args: argparse.Namespace) -> dict[str, object]:
 
     if errors:
         report["errors"] = [r.error for r in errors[:10]]
+        report.update(
+            _summarize_error_metrics(errors=errors, total_requests=total_requests)
+        )
 
     return report
+
+
+def _summarize_error_metrics(
+    *, errors: list[RequestResult], total_requests: int
+) -> dict[str, object]:
+    error_buckets: Counter[str] = Counter()
+    error_type_buckets: Counter[str] = Counter()
+    transient_error_count = 0
+    quota_transient_error_count = 0
+
+    for item in errors:
+        bucket = _error_bucket_key(item)
+        error_buckets[bucket] += 1
+        error_type_buckets[item.error_type or "UnknownError"] += 1
+
+        if item.is_transient:
+            transient_error_count += 1
+            if _is_quota_like_error(item):
+                quota_transient_error_count += 1
+
+    return {
+        "error_buckets": dict(error_buckets.most_common()),
+        "error_type_buckets": dict(error_type_buckets.most_common()),
+        "transient_error_count": transient_error_count,
+        "transient_error_rate": round(
+            transient_error_count / max(1, total_requests), 4
+        ),
+        "quota_transient_error_count": quota_transient_error_count,
+        "quota_transient_error_rate": round(
+            quota_transient_error_count / max(1, total_requests), 4
+        ),
+    }
+
+
+def _error_bucket_key(item: RequestResult) -> str:
+    status = str(item.status_code) if item.status_code is not None else "unknown"
+    error_type = item.error_type or "UnknownError"
+    return f"{status}:{error_type}"
+
+
+def _is_quota_like_error(item: RequestResult) -> bool:
+    if item.status_code in {429, 503}:
+        return True
+    text = (item.error or "").lower()
+    return any(
+        token in text
+        for token in ("resourceexhausted", "too many requests", "rate limit")
+    )
 
 
 def main() -> None:

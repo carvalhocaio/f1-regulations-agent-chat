@@ -28,6 +28,7 @@ Built with [Google ADK](https://google.github.io/adk-docs/) and powered by Gemin
 - **Dynamic few-shot via Example Store (A5)** — retrieves similar examples of real errors at runtime (feature-flagged)
 - **Code Execution sandbox (A6, restricted mode)** — allowlisted analytical templates for simulations/statistics (feature-flagged)
 - **RAG Engine rollout (A4)** — `search_regulations` supports phased routing (`auto|local|vertex`) with automatic fallback to local hybrid RAG
+- **Standardized resilience** — exponential backoff + jitter + circuit breaker for transient 429/503 failures in runtime/tools
 - **Runtime temporal context** — injects current UTC date/year on every request to avoid stale year assumptions after deploy
 - **Temporal reasoning** — automatically splits questions: `1950-2024` via SQLite, `2025+` via web search
 
@@ -157,6 +158,23 @@ GOOGLE_API_KEY=your-key-here
 # F1_CODE_EXECUTION_AGENT_ENGINE_NAME=projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>
 # F1_CODE_EXECUTION_SANDBOX_TTL_SECONDS=3600
 # F1_CODE_EXECUTION_MAX_ROWS=500
+
+# Optional (P2 resilience defaults tuned for chat fail-fast).
+# F1_LLM_RETRY_ENABLED=true
+# F1_LLM_RETRY_ATTEMPTS=3
+# F1_LLM_RETRY_INITIAL_DELAY_S=1.0
+# F1_LLM_RETRY_MAX_DELAY_S=8.0
+# F1_LLM_RETRY_EXP_BASE=2.0
+# F1_LLM_RETRY_JITTER=0.35
+# F1_RETRY_ENABLED=true
+# F1_RETRY_MAX_ATTEMPTS=3
+# F1_RETRY_INITIAL_DELAY_S=0.4
+# F1_RETRY_MAX_DELAY_S=4.0
+# F1_RETRY_EXP_BASE=2.0
+# F1_RETRY_JITTER=0.35
+# F1_CIRCUIT_ENABLED=true
+# F1_CIRCUIT_FAILURE_THRESHOLD=5
+# F1_CIRCUIT_OPEN_SECONDS=20
 EOF
 
 # 4. Add source data to docs/ (FIA PDFs + Kaggle CSVs)
