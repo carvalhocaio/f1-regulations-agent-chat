@@ -1,0 +1,12 @@
+{
+  "version": "v2",
+  "project_id": "f1-regulations-agent-chat",
+  "location": "us-central1",
+  "base_model": "gemini-2.5-flash",
+  "tuned_model_display_name": "f1-agent-tuned-v2-live-20260327",
+  "training_data": "gs://f1-regulations-agent-chat-artifacts/fine_tuning/dataset.train.v2.jsonl",
+  "validation_data": "gs://f1-regulations-agent-chat-artifacts/fine_tuning/dataset.test.v2.jsonl",
+  "tuning_job_name": "projects/197802155468/locations/us-central1/tuningJobs/1074519298979921920",
+  "console_url": "https://console.cloud.google.com/vertex-ai/generative/language/locations/us-central1/tuning/tuningJob/1074519298979921920?project=197802155468",
+  "initial_state": "JOB_STATE_RUNNING"
+}

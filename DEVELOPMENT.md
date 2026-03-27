@@ -384,6 +384,44 @@ echo -n "projects/<PROJECT_NUMBER>/locations/us-central1/endpoints/<ENDPOINT_ID>
 
 The deploy script (`deployment/deploy.py`) automatically reads the `f1-tuned-model` secret from Secret Manager and injects it as the `F1_TUNED_MODEL` environment variable in the Agent Engine runtime.
 
+### Continuous tuning loop (live dataset)
+
+Q5 introduces a live-dataset path to continuously improve tool use and response format quality.
+
+1. Curate failures from eval/runtime signals into a raw JSONL file (see schema in `data/fine_tuning_live/README.md`).
+2. (Optional automation) collect raw failures from eval artifacts:
+
+```bash
+uv run python deployment/collect_live_failures.py \
+  --eval-dataset-file data/evals/agent_regression.v1.jsonl \
+  --eval-report-file eval_report.json \
+  --eval-gate-result-file eval_gate_result.json \
+  --output-file data/fine_tuning_live/live_failures.raw.v1.jsonl
+```
+
+3. Build a versioned, redacted live dataset:
+
+```bash
+uv run python deployment/build_live_fine_tuning_dataset.py \
+  --failures-file data/fine_tuning_live/live_failures.raw.v1.jsonl \
+  --output-dir data/fine_tuning_live \
+  --version v1
+```
+
+4. Upload generated train/test files to GCS and launch tuning:
+
+```bash
+gsutil cp data/fine_tuning_live/dataset.train.v1.jsonl gs://<BUCKET>/fine_tuning/dataset.train.v1.jsonl
+gsutil cp data/fine_tuning_live/dataset.test.v1.jsonl gs://<BUCKET>/fine_tuning/dataset.test.v1.jsonl
+
+uv run python -m f1_agent.fine_tuning.tune \
+  --project <PROJECT_ID> \
+  --training-data gs://<BUCKET>/fine_tuning/dataset.train.v1.jsonl \
+  --validation-data gs://<BUCKET>/fine_tuning/dataset.test.v1.jsonl
+```
+
+Redaction is enabled by default in the builder and should remain enabled for regular operation.
+
 ### Fine-tuning files
 
 | File | Purpose |

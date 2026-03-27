@@ -224,6 +224,15 @@ jobs:
             --output-file "eval_gate_result.json" \
             "${BASELINE_ARGS[@]}"
 
+      - name: Build live failures artifact
+        if: always()
+        run: |
+          uv run python deployment/collect_live_failures.py \
+            --eval-dataset-file "$EVAL_DATASET_FILE" \
+            --eval-report-file "eval_report.json" \
+            --eval-gate-result-file "eval_gate_result.json" \
+            --output-file "live_failures.raw.$GITHUB_SHA.jsonl"
+
       - name: Upload evaluation artifacts
         if: always()
         uses: actions/upload-artifact@v7
@@ -232,12 +241,22 @@ jobs:
           path: |
             eval_report.json
             eval_gate_result.json
+            live_failures.raw.$GITHUB_SHA.jsonl
 
       - name: Publish evaluation report to GCS
         run: |
           gcloud storage cp \
             "eval_report.json" \
             "gs://$ARTIFACTS_BUCKET/eval/releases/$GITHUB_SHA/eval_report.json"
+
+      - name: Publish live failures artifact to GCS
+        if: always()
+        run: |
+          if [ -f "live_failures.raw.$GITHUB_SHA.jsonl" ]; then
+            gcloud storage cp \
+              "live_failures.raw.$GITHUB_SHA.jsonl" \
+              "gs://$ARTIFACTS_BUCKET/eval/live_failures/$GITHUB_SHA/live_failures.raw.jsonl"
+          fi
 
       - name: Update baseline after approved gate
         run: |

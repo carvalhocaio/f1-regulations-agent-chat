@@ -1,0 +1,4 @@
+{"id":"evt-tool-001","message":"tool_validation_error | tool=query_f1_history code=INVALID_QUERY count=4 message=Query must start with SELECT.","prompt":"Use query_f1_history com SQL livre para listar campeoes de 2023.","criticality":"high"}
+{"id":"evt-format-001","log":"structured_response_validation | contract_id=sources_block_v1 outcome=schema_failure error=missing_required_field","user_prompt":"Compare Hamilton e Schumacher e devolva em JSON com stats e fontes.","criticality":"medium"}
+{"id":"evt-grounding-001","text":"grounding_validation | policy=web_grounding required=true source=none outcome=missing details=no_web_context","query":"What changed in 2026 DRS activation rules? Include article references.","criticality":"high"}
+{"id":"evt-tool-002","message":"tool_validation_error | tool=search_regulations code=INVALID_ARGUMENT count=2 message=Query too short","prompt":"search_regulations: q=rule","criticality":"medium"}
