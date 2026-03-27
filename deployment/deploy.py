@@ -154,6 +154,9 @@ def build_agent_engine_config(
         display_name=args.display_name,
         description=args.description,
         service_account=args.service_account,
+        min_instances=args.min_instances,
+        max_instances=args.max_instances,
+        container_concurrency=args.container_concurrency,
         env_vars=env_vars,
         staging_bucket=args.staging_bucket,
     )
@@ -191,6 +194,33 @@ def _drop_empty_env_values(env_vars: dict[str, str]) -> dict[str, str]:
     return cleaned
 
 
+def _validate_runtime_scaling(args: argparse.Namespace) -> None:
+    """Validate Agent Engine runtime scaling controls."""
+    if args.min_instances < 0:
+        raise ValueError("--min-instances must be >= 0")
+
+    if args.min_instances > 10:
+        raise ValueError("--min-instances must be <= 10")
+
+    if args.max_instances < 1:
+        raise ValueError("--max-instances must be >= 1")
+
+    if args.max_instances > 100:
+        raise ValueError("--max-instances must be <= 100")
+
+    if args.max_instances < args.min_instances:
+        raise ValueError("--max-instances must be >= --min-instances")
+
+    if args.container_concurrency < 1:
+        raise ValueError("--container-concurrency must be >= 1")
+
+    if args.container_concurrency % 9 != 0:
+        print(
+            "Warning: for ADK async agents, use --container-concurrency as "
+            "a multiple of 9 (for example, 18 or 36)."
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Deploy F1 agent to Agent Engine")
     parser.add_argument("--project-id", required=True)
@@ -199,6 +229,24 @@ def main():
     parser.add_argument("--display-name", required=True)
     parser.add_argument("--description", default="F1 Regulations & History Agent")
     parser.add_argument("--service-account", default=None)
+    parser.add_argument(
+        "--min-instances",
+        type=int,
+        default=2,
+        help="Minimum warm Agent Engine instances (0-10)",
+    )
+    parser.add_argument(
+        "--max-instances",
+        type=int,
+        default=6,
+        help="Maximum Agent Engine instances (>= min, <= 100)",
+    )
+    parser.add_argument(
+        "--container-concurrency",
+        type=int,
+        default=18,
+        help="Max concurrent requests per container (ADK async: multiple of 9)",
+    )
     parser.add_argument(
         "--rag-backend",
         default="auto",
@@ -311,6 +359,15 @@ def main():
             "--example-store-enabled requires --example-store-name "
             "(projects/.../locations/.../exampleStores/...)"
         )
+
+    _validate_runtime_scaling(args)
+
+    print(
+        "Runtime scaling: "
+        f"min_instances={args.min_instances}, "
+        f"max_instances={args.max_instances}, "
+        f"container_concurrency={args.container_concurrency}"
+    )
 
     client = vertexai.Client(
         project=args.project_id,

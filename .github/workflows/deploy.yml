@@ -15,6 +15,9 @@ env:
   MEMORY_BANK_AGENT_ENGINE_NAME: ${{ secrets.GCP_MEMORY_BANK_AGENT_ENGINE_NAME }}
   CODE_EXECUTION_ENABLED: ${{ secrets.GCP_CODE_EXECUTION_ENABLED }}
   CODE_EXECUTION_AGENT_ENGINE_NAME: ${{ secrets.GCP_CODE_EXECUTION_AGENT_ENGINE_NAME }}
+  AGENT_MIN_INSTANCES: ${{ secrets.GCP_AGENT_MIN_INSTANCES }}
+  AGENT_MAX_INSTANCES: ${{ secrets.GCP_AGENT_MAX_INSTANCES }}
+  AGENT_CONTAINER_CONCURRENCY: ${{ secrets.GCP_AGENT_CONTAINER_CONCURRENCY }}
   ARTIFACTS_BUCKET: "${{ secrets.GCP_PROJECT_ID }}-artifacts"
 
 jobs:
@@ -71,6 +74,10 @@ jobs:
 
       - name: Deploy to Agent Engine
         run: |
+          AGENT_MIN_INSTANCES="${AGENT_MIN_INSTANCES:-2}"
+          AGENT_MAX_INSTANCES="${AGENT_MAX_INSTANCES:-6}"
+          AGENT_CONTAINER_CONCURRENCY="${AGENT_CONTAINER_CONCURRENCY:-18}"
+
           MEMORY_BANK_ARGS=()
           if [ "${MEMORY_BANK_ENABLED}" = "true" ]; then
             MEMORY_BANK_ARGS+=(
@@ -109,6 +116,9 @@ jobs:
             --staging-bucket "$STAGING_BUCKET" \
             --display-name "f1-agent" \
             --service-account "$SA_EMAIL" \
+            --min-instances "$AGENT_MIN_INSTANCES" \
+            --max-instances "$AGENT_MAX_INSTANCES" \
+            --container-concurrency "$AGENT_CONTAINER_CONCURRENCY" \
             --rag-backend "auto" \
             --rag-corpus "$RAG_CORPUS" \
             --rag-location "${RAG_REGION:-$REGION}" \

@@ -262,6 +262,9 @@ uv run python deployment/deploy.py \
   --staging-bucket $STAGING_BUCKET \
   --display-name "f1-agent" \
   --service-account $SA_EMAIL \
+  --min-instances 2 \
+  --max-instances 6 \
+  --container-concurrency 18 \
   --rag-backend auto \
   --rag-corpus "projects/<PROJECT_NUMBER>/locations/europe-west4/ragCorpora/<RAG_CORPUS_ID>" \
   --rag-location "europe-west4" \
@@ -298,6 +301,27 @@ This smoke test now validates:
 - Sessions create/get/list/delete (managed)
 - TTL payload applied on session creation
 
+### 6.2) Load test (for scaling calibration)
+
+Use this script to compare p95 before and after scaling changes:
+
+```fish
+uv run python deployment/load_test_agent_engine.py \
+  --project-id $PROJECT_ID \
+  --location $LOCATION \
+  --resource-name $RESOURCE_NAME \
+  --total-requests 150 \
+  --concurrency 30 \
+  --user-pool-size 30 \
+  --warmup-requests 15
+```
+
+Suggested quick loop:
+1. Run once with current config (baseline).
+2. Increase `--min-instances` to reduce cold starts.
+3. Adjust `--container-concurrency` (multiples of 9) to absorb bursts.
+4. Keep `--max-instances` bounded for cost control.
+
 ---
 
 ## 7) CI/CD — GitHub Actions
@@ -319,6 +343,9 @@ Configure under **Settings > Secrets and variables > Actions**:
 | `GCP_MEMORY_BANK_AGENT_ENGINE_NAME` | `projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>` (optional, recommended when enabling A3) |
 | `GCP_CODE_EXECUTION_ENABLED` | `true` or `false` (optional; enables A6 rollout in deploy workflow) |
 | `GCP_CODE_EXECUTION_AGENT_ENGINE_NAME` | `projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>` (optional, recommended when enabling A6) |
+| `GCP_AGENT_MIN_INSTANCES` | Optional; defaults to `2` in workflow |
+| `GCP_AGENT_MAX_INSTANCES` | Optional; defaults to `6` in workflow |
+| `GCP_AGENT_CONTAINER_CONCURRENCY` | Optional; defaults to `18` in workflow (ADK async: prefer multiple of 9) |
 
 > **Recommended**: Use [Workload Identity Federation](https://github.com/google-github-actions/auth#workload-identity-federation) instead of SA key for keyless authentication.
 
@@ -362,6 +389,9 @@ uv run python deployment/deploy.py \
   --staging-bucket $STAGING_BUCKET \
   --display-name "f1-agent" \
   --service-account $SA_EMAIL \
+  --min-instances 2 \
+  --max-instances 6 \
+  --container-concurrency 18 \
   --rag-backend auto \
   --rag-corpus "projects/<PROJECT_NUMBER>/locations/europe-west4/ragCorpora/<RAG_CORPUS_ID>" \
   --rag-location "europe-west4"
@@ -400,7 +430,7 @@ print("Deleted:", os.environ["RESOURCE_NAME"])
 - **Memory Bank**: enable only after Sessions are stable and `user_id` contract is enforced. Start with `F1_MEMORY_BANK_GENERATE_ON_CORRECTION_ONLY=true` to reduce noisy memories.
 - **Code Execution (A6)**: keep disabled by default and enable only with a clear safety policy. Current implementation is restricted to allowlisted analytical templates and `us-central1`.
 - **Fine-tuned model**: The `f1-tuned-model` secret is optional. If not set, simple queries fall back to `gemini-2.5-flash`. See [DEVELOPMENT.md](./DEVELOPMENT.md#fine-tuning-production-only) for details.
-- **Scaling**: Adjust `min_instances` and `max_instances` according to demand.
+- **Scaling**: tune `min_instances`, `max_instances`, and `container_concurrency` with load tests. For ADK async agents, start with concurrency as a multiple of 9.
 - **Data artifacts**: If PDFs or CSVs are updated, re-run `build_index.py` locally and upload the new artifacts to the bucket.
 - **Telemetry**: The deploy already enables traces and logs via OpenTelemetry. Access them in the Vertex AI console under **Dashboard** and **Traces**.
 - **Session contract**: client should propagate `user_id` + `session_id` on every request. If the app has no login, use a stable browser `client_id` and derive `user_id=anon-<hash(client_id)>`.
