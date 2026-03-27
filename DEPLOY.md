@@ -302,6 +302,32 @@ This smoke test now validates:
 - Sessions create/get/list/delete (managed)
 - TTL payload applied on session creation
 
+Optional bidi smoke test (P7 scaffolding):
+
+```fish
+uv run python deployment/smoke_bidi_agent_engine.py \
+  --project-id $PROJECT_ID \
+  --location $LOCATION \
+  --resource-name $RESOURCE_NAME \
+  --user-id "smoke-bidi-user" \
+  --message "Give me a one-line summary of Formula 1."
+```
+
+This command prints protocolized events (`turn_start`, `delta`, `turn_end`, `error`).
+
+Optional local WebSocket bridge (P7):
+
+```fish
+uv run python deployment/websocket_bidi_server.py \
+  --project-id $PROJECT_ID \
+  --location $LOCATION \
+  --resource-name $RESOURCE_NAME \
+  --host 0.0.0.0 \
+  --port 8001
+```
+
+WebSocket endpoint: `ws://localhost:8001/ws/chat`
+
 ### 6.2) Load test (for scaling calibration)
 
 Use this script to compare p95 before and after scaling changes:
@@ -322,6 +348,22 @@ Suggested quick loop:
 2. Increase `--min-instances` to reduce cold starts.
 3. Adjust `--container-concurrency` (multiples of 9) to absorb bursts.
 4. Keep `--max-instances` bounded for cost control.
+
+### 6.2.1) Streaming mode benchmark (P7)
+
+Use this benchmark to compare TTFT and turn latency across modes:
+
+```fish
+uv run python deployment/benchmark_streaming_modes.py \
+  --project-id $PROJECT_ID \
+  --location $LOCATION \
+  --resource-name $RESOURCE_NAME \
+  --modes "query,async_stream,bidi" \
+  --total-requests 30 \
+  --concurrency 5
+```
+
+The output includes per-mode `ttft_p50/p95` and `turn_p50/p95`.
 
 ### 6.3) Semantic cache lookup benchmark (P5)
 

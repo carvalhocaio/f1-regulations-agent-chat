@@ -96,6 +96,22 @@ Recommended flow:
 
 This enables cross-request persistence for callback state (for example, correction memory).
 
+## WebSocket Streaming Contract (P7)
+
+Bridge endpoint: `ws://<host>:8001/ws/chat`
+
+Client -> server messages:
+- `{"type":"input","input":"...","request_id":"...","user_id":"...","session_id":"..."}`
+- `{"type":"abort"}`
+- `{"type":"ping"}`
+- `{"type":"close"}`
+
+Server -> client events (`stream_protocol_version=v1`):
+- `turn_start`
+- `delta`
+- `turn_end`
+- `error`
+
 ## Stack
 
 - [Google ADK](https://google.github.io/adk-docs/) — agent framework and local web UI
@@ -227,6 +243,9 @@ f1-regulations-agent-chat/
 │   ├── callbacks.py            # Model routing, semantic cache, session corrections
 │   ├── runner.py               # ADK runner wiring for managed/local sessions
 │   ├── sessions.py             # user_id/session_id normalization helpers
+│   ├── streaming_protocol.py    # Stream event envelope (`stream_protocol_version=v1`)
+│   ├── bidi.py                 # Helpers to convert bidi SDK events into protocol events
+│   ├── websocket_bridge.py      # Framework-agnostic WebSocket <-> bidi bridge loop
 │   ├── memory_bank.py          # Long-term memory retrieval/generation (A3)
 │   ├── cache.py                # SemanticCache (FAISS + SQLite, TTL-based)
 │   ├── code_execution.py       # Restricted analytical sandbox adapter (A6)
@@ -244,6 +263,9 @@ f1-regulations-agent-chat/
 ├── tests/                      # Unit tests (routing, cache, tools, sessions, temporal logic)
 ├── deployment/
 │   ├── deploy.py               # Vertex AI Agent Engine deploy script
+│   ├── smoke_bidi_agent_engine.py # Bidi streaming smoke test (P7)
+│   ├── benchmark_streaming_modes.py # Compare TTFT across query/streaming modes
+│   ├── websocket_bidi_server.py # FastAPI WebSocket bridge for interactive bidi chat
 │   ├── rag_engine_ingest.py    # Vertex RAG corpus create/import helper
 │   └── terraform/              # GCP infrastructure as code
 ├── docs/                       # FIA PDFs + Kaggle CSV folder (input data)
