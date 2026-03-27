@@ -23,6 +23,7 @@ Built with [Google ADK](https://google.github.io/adk-docs/) and powered by Gemin
 - **Semantic cache** — near-instant responses for repeated/similar questions (cosine similarity > 0.92)
 - **Session corrections** — detects when users correct the agent (PT/EN) and avoids repeating mistakes
 - **Managed sessions (A2)** — supports Vertex AI Sessions (`user_id` + `session_id`) with TTL for persistent context
+- **Dynamic few-shot via Example Store (A5)** — retrieves similar examples of real errors at runtime (feature-flagged)
 - **RAG Engine rollout (A4)** — `search_regulations` supports phased routing (`auto|local|vertex`) with automatic fallback to local hybrid RAG
 - **Runtime temporal context** — injects current UTC date/year on every request to avoid stale year assumptions after deploy
 - **Temporal reasoning** — automatically splits questions: `1950-2024` via SQLite, `2025+` via web search
@@ -38,6 +39,8 @@ User question
 [inject_runtime_temporal_context] --> Inject current UTC date/year (per request)
     |
 [inject_corrections] --> Append session corrections to prompt
+    |
+[inject_dynamic_examples] --> Retrieve similar corrected errors from Example Store
     |
 [route_model] -----> Simple? -> Flash/Tuned | Complex? -> Pro
     |
@@ -122,6 +125,12 @@ GOOGLE_API_KEY=your-key-here
 # F1_RAG_LOCATION=us-central1
 # F1_RAG_TOP_K=5
 # F1_RAG_VECTOR_DISTANCE_THRESHOLD=0.5
+
+# Optional (A5 dynamic few-shot). Keep disabled by default.
+# F1_EXAMPLE_STORE_ENABLED=false
+# F1_EXAMPLE_STORE_NAME=projects/<PROJECT_NUMBER>/locations/us-central1/exampleStores/<EXAMPLE_STORE_ID>
+# F1_EXAMPLE_STORE_TOP_K=3
+# F1_EXAMPLE_STORE_MIN_SCORE=0.65
 EOF
 
 # 4. Add source data to docs/ (FIA PDFs + Kaggle CSVs)

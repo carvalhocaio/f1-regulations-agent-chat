@@ -212,7 +212,35 @@ def main():
         default=None,
         help="Optional Vertex RAG vector distance threshold",
     )
+    parser.add_argument(
+        "--example-store-enabled",
+        action="store_true",
+        help="Enable dynamic few-shot retrieval from Example Store",
+    )
+    parser.add_argument(
+        "--example-store-name",
+        default="",
+        help="Example Store resource name (projects/.../locations/.../exampleStores/...)",
+    )
+    parser.add_argument(
+        "--example-store-top-k",
+        type=int,
+        default=3,
+        help="Top-k dynamic examples retrieved per request",
+    )
+    parser.add_argument(
+        "--example-store-min-score",
+        type=float,
+        default=0.65,
+        help="Minimum similarity score required for dynamic examples",
+    )
     args = parser.parse_args()
+
+    if args.example_store_enabled and not args.example_store_name:
+        raise ValueError(
+            "--example-store-enabled requires --example-store-name "
+            "(projects/.../locations/.../exampleStores/...)"
+        )
 
     client = vertexai.Client(
         project=args.project_id,
@@ -235,6 +263,10 @@ def main():
         "F1_RAG_TOP_K": str(max(1, args.rag_top_k)),
         "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
+        "F1_EXAMPLE_STORE_ENABLED": "true" if args.example_store_enabled else "false",
+        "F1_EXAMPLE_STORE_NAME": args.example_store_name,
+        "F1_EXAMPLE_STORE_TOP_K": str(max(1, args.example_store_top_k)),
+        "F1_EXAMPLE_STORE_MIN_SCORE": str(args.example_store_min_score),
     }
 
     if args.rag_corpus:

@@ -20,6 +20,7 @@ from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 
 from f1_agent.cache import SemanticCache
+from f1_agent.example_store import build_dynamic_examples_addendum
 
 logger = logging.getLogger(__name__)
 
@@ -520,6 +521,27 @@ def inject_corrections(callback_context, llm_request):
 
     llm_request.append_instructions([addendum])
     logger.debug("Injected %d corrections into prompt", len(corrections))
+    return None
+
+
+def inject_dynamic_examples(callback_context, llm_request):
+    """Before-model callback: inject retrieved Example Store few-shots."""
+    user_text = _extract_user_text(callback_context, llm_request)
+    addendum, metadata = build_dynamic_examples_addendum(user_text)
+    if not addendum:
+        logger.debug(
+            "Dynamic examples skipped (enabled=%s, configured=%s)",
+            metadata.get("enabled"),
+            metadata.get("store_configured"),
+        )
+        return None
+
+    llm_request.append_instructions([addendum])
+    logger.info(
+        "Injected dynamic examples: count=%s top_similarity=%s",
+        metadata.get("example_count"),
+        metadata.get("top_similarity"),
+    )
     return None
 
 

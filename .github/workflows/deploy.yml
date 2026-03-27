@@ -76,6 +76,11 @@ jobs:
             --rag-backend "auto" \
             --rag-corpus "$RAG_CORPUS" \
             --rag-location "${RAG_REGION:-$REGION}"
+          # Optional A5 flags (manual rollout):
+          #   --example-store-enabled \
+          #   --example-store-name "projects/<PROJECT_NUMBER>/locations/us-central1/exampleStores/<EXAMPLE_STORE_ID>" \
+          #   --example-store-top-k 3 \
+          #   --example-store-min-score 0.65
 
       - name: Smoke test deployed agent (read-only)
         run: |

@@ -77,6 +77,10 @@ Opens the ADK web UI at `http://localhost:8000`.
 | `F1_RAG_LOCATION` | No | — | Explicit location for Vertex RAG client initialization |
 | `F1_RAG_TOP_K` | No | `5` | Top-k retrieved chunks for Vertex RAG |
 | `F1_RAG_VECTOR_DISTANCE_THRESHOLD` | No | — | Optional retrieval distance threshold for Vertex RAG |
+| `F1_EXAMPLE_STORE_ENABLED` | No | `false` | Enables dynamic few-shot retrieval from Example Store |
+| `F1_EXAMPLE_STORE_NAME` | No | — | Example Store resource name: `projects/.../locations/.../exampleStores/...` |
+| `F1_EXAMPLE_STORE_TOP_K` | No | `3` | Number of candidate examples retrieved per request |
+| `F1_EXAMPLE_STORE_MIN_SCORE` | No | `0.65` | Similarity threshold for injecting an example |
 
 ## Generated Artifacts
 
@@ -99,14 +103,15 @@ Before model:
   1. check_cache      — Return cached answer if similarity > 0.92
   2. inject_runtime_temporal_context — Inject current UTC date/year per request
   3. inject_corrections — Append user corrections from this session
-  4. route_model      — Route to Flash/tuned (simple) or Pro (complex)
+  4. inject_dynamic_examples — Retrieve real-error few-shots from Example Store
+  5. route_model      — Route to Flash/tuned (simple) or Pro (complex)
 
 After model:
-  5. detect_corrections — Detect if the user corrected the agent (PT/EN)
-  6. store_cache      — Cache the answer (TTL: 30 days static, 24h web)
+  6. detect_corrections — Detect if the user corrected the agent (PT/EN)
+  7. store_cache      — Cache the answer (TTL: 30 days static, 24h web)
 
 On error:
-  7. handle_rate_limit — User-friendly message for 429/503 errors
+  8. handle_rate_limit — User-friendly message for 429/503 errors
 ```
 
 ### Model Routing
@@ -157,6 +162,39 @@ The Vertex adapter lives in `f1_agent/rag_vertex.py` and normalizes results to t
 - **Storage**: Corrections stored in `callback_context.state["f1_corrections"]` (per-session)
 - **Injection**: Before each LLM call, stored corrections are appended to the system instruction
 - **Cap**: Maximum 20 corrections per session
+
+### Dynamic Few-shot (A5)
+
+`f1_agent/example_store.py` can retrieve semantically similar examples from a
+Vertex AI Example Store and inject compact guidance before model execution:
+
+- **Gate**: controlled by `F1_EXAMPLE_STORE_ENABLED`
+- **Retrieval**: `search_examples(stored_contents_example_key=<user_text>)`
+- **Selection**: top-k with `F1_EXAMPLE_STORE_TOP_K` + score filter via `F1_EXAMPLE_STORE_MIN_SCORE`
+- **Safety**: failures are non-blocking; the request continues without dynamic examples
+
+Manual curation workflow (v1):
+
+1. Curate examples into `data/example_store/manual_examples.v1.jsonl`
+2. Dry-run validation:
+
+```bash
+uv run python deployment/example_store_sync.py \
+  --project-id <PROJECT_ID> \
+  --location us-central1 \
+  --dataset data/example_store/manual_examples.v1.jsonl \
+  --dry-run
+```
+
+3. Sync to Example Store:
+
+```bash
+uv run python deployment/example_store_sync.py \
+  --project-id <PROJECT_ID> \
+  --location us-central1 \
+  --dataset data/example_store/manual_examples.v1.jsonl \
+  --example-store-name projects/<PROJECT_NUMBER>/locations/us-central1/exampleStores/<EXAMPLE_STORE_ID>
+```
 
 ### Managed Sessions (A2)
 

@@ -51,6 +51,19 @@ class AgentToolContractTests(unittest.TestCase):
         self.assertIn("A temporada atual", instruction)
         self.assertIn("ainda não começou", instruction)
 
+    def test_before_model_callback_includes_dynamic_examples(self):
+        callback_names = [cb.__name__ for cb in root_agent.before_model_callback]
+
+        self.assertIn("inject_dynamic_examples", callback_names)
+        self.assertLess(
+            callback_names.index("inject_corrections"),
+            callback_names.index("inject_dynamic_examples"),
+        )
+        self.assertLess(
+            callback_names.index("inject_dynamic_examples"),
+            callback_names.index("route_model"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

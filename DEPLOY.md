@@ -217,6 +217,28 @@ Copy the returned corpus resource name:
 projects/<PROJECT_NUMBER>/locations/europe-west4/ragCorpora/<RAG_CORPUS_ID>
 ```
 
+## 5.1) Prepare Example Store for dynamic few-shot (A5, optional)
+
+Use manual curation JSONL (v1) and sync with:
+
+```fish
+uv run python deployment/example_store_sync.py \
+  --project-id $PROJECT_ID \
+  --location us-central1 \
+  --dataset data/example_store/manual_examples.v1.jsonl \
+  --example-store-name "projects/<PROJECT_NUMBER>/locations/us-central1/exampleStores/<EXAMPLE_STORE_ID>"
+```
+
+If you need to create a store first, omit `--example-store-name` and pass a display name:
+
+```fish
+uv run python deployment/example_store_sync.py \
+  --project-id $PROJECT_ID \
+  --location us-central1 \
+  --dataset data/example_store/manual_examples.v1.jsonl \
+  --display-name "f1-real-errors"
+```
+
 ---
 
 ## 6) Manual deploy (local)
@@ -242,7 +264,11 @@ uv run python deployment/deploy.py \
   --service-account $SA_EMAIL \
   --rag-backend auto \
   --rag-corpus "projects/<PROJECT_NUMBER>/locations/europe-west4/ragCorpora/<RAG_CORPUS_ID>" \
-  --rag-location "europe-west4"
+  --rag-location "europe-west4" \
+  --example-store-enabled \
+  --example-store-name "projects/<PROJECT_NUMBER>/locations/us-central1/exampleStores/<EXAMPLE_STORE_ID>" \
+  --example-store-top-k 3 \
+  --example-store-min-score 0.65
 ```
 
 ### 6.1) Smoke test
@@ -356,6 +382,7 @@ print("Deleted:", os.environ["RESOURCE_NAME"])
 - **LLM model version**: Production uses `gemini-2.5-pro` for complex queries and the fine-tuned Flash endpoint (`F1_TUNED_MODEL`) for simple queries. Model routing is automatic via callbacks.
 - **RAG backend**: `F1_RAG_BACKEND=auto` is the recommended default. It prefers Vertex RAG when configured (`F1_RAG_CORPUS`) and falls back to local FAISS+BM25 for resilience.
 - **RAG location**: `F1_RAG_LOCATION` can be different from Agent Engine region; use `europe-west4` (or `europe-west3`) when `us-central1` is allowlist-restricted.
+- **Example Store**: only enable dynamic few-shot when `F1_EXAMPLE_STORE_NAME` points to a valid store. Recommended region for Example Store is `us-central1`.
 - **Fine-tuned model**: The `f1-tuned-model` secret is optional. If not set, simple queries fall back to `gemini-2.5-flash`. See [DEVELOPMENT.md](./DEVELOPMENT.md#fine-tuning-production-only) for details.
 - **Scaling**: Adjust `min_instances` and `max_instances` according to demand.
 - **Data artifacts**: If PDFs or CSVs are updated, re-run `build_index.py` locally and upload the new artifacts to the bucket.
