@@ -1,15 +1,13 @@
-"""Smoke tests for Agent Engine resource and managed Sessions flows.
+"""Smoke tests for Agent Engine resource lifecycle checks.
 
-Validates list/get for Agent Engine and create/get/list/delete for Sessions.
+Validates list/get for Agent Engine and optional resource deletion.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 
 import vertexai
-from vertexai import types
 
 
 def _resource_name(agent_engine: object) -> str | None:
@@ -131,17 +129,6 @@ def main() -> None:
         action="store_true",
         help="Delete resource at the end (destructive)",
     )
-    parser.add_argument(
-        "--user-id",
-        default="smoke-user",
-        help="User id used for managed session validation",
-    )
-    parser.add_argument(
-        "--session-ttl-seconds",
-        type=int,
-        default=864000,
-        help="Session TTL in seconds for create_session config",
-    )
     args = parser.parse_args()
 
     client = vertexai.Client(project=args.project_id, location=args.location)
@@ -169,57 +156,7 @@ def main() -> None:
         )
     print(f"Fetched: {got_name}")
 
-    print("[3/5] sessions.create/get/list")
-    create_config = types.CreateAgentEngineSessionConfig(
-        ttl=f"{args.session_ttl_seconds}s"
-    )
-    created = client.agent_engines.sessions.create(
-        name=args.resource_name,
-        user_id=args.user_id,
-        config=create_config,
-    )
-
-    session_name = _extract_session_name(created)
-    if not session_name:
-        raise RuntimeError(
-            "sessions.create() did not return a session resource name "
-            "(expected .../sessions/{id})"
-        )
-
-    session_id = session_name.split("/")[-1]
-    got_session = client.agent_engines.sessions.get(name=session_name)
-    got_session_name = _session_name(got_session)
-    if got_session_name != session_name:
-        raise RuntimeError(
-            "sessions.get() returned unexpected session name: "
-            f"{got_session_name} (expected {session_name})"
-        )
-
-    got_user_id = _session_user_id(got_session)
-    if got_user_id != args.user_id:
-        raise RuntimeError(
-            f"Session user_id mismatch: {got_user_id} (expected {args.user_id})"
-        )
-
-    listed_sessions = list(client.agent_engines.sessions.list(name=args.resource_name))
-    listed_session_names = {_session_name(session) for session in listed_sessions}
-    if session_name not in listed_session_names:
-        raise RuntimeError(
-            f"Created session not found in list() response: {session_name}"
-        )
-
-    session_metadata = {
-        "session_name": session_name,
-        "session_id": session_id,
-        "user_id": args.user_id,
-        "ttl_seconds": args.session_ttl_seconds,
-    }
-    print("Session validated:", json.dumps(session_metadata, indent=2))
-
-    print("[4/5] sessions.delete")
-    client.agent_engines.sessions.delete(name=session_name)
-
-    print("[5/5] reasoning engine delete")
+    print("[3/3] reasoning engine delete")
     if args.delete:
         client.agent_engines.delete(name=args.resource_name)
         print(f"Deleted: {args.resource_name}")

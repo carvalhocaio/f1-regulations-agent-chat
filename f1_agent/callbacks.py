@@ -10,7 +10,7 @@ ADK callbacks for model routing, semantic caching, and session corrections.
 - ``detect_corrections``: after-model callback (actually runs on user turn)
   that detects correction patterns and stores them in session state.
 - ``sync_memory_bank``: after-model callback that triggers long-term memory
-  generation from managed session history.
+  generation from current session context.
 """
 
 from __future__ import annotations
@@ -21,9 +21,9 @@ import os
 import re
 from datetime import date, datetime, timezone
 
-from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 
+from f1_agent.adk_compat import LlmResponse
 from f1_agent.cache import SemanticCache
 from f1_agent.example_store import build_dynamic_examples_addendum
 from f1_agent.memory_bank import (

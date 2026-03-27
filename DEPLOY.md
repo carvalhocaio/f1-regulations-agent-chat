@@ -10,7 +10,7 @@ GitHub Actions (CI/CD)
   └── merge main → deploy production (with manual approval)
 
 GCP (f1-regulations-agent-chat)
-  ├── Vertex AI Agent Engine  ← ADK agent (f1_agent)
+  ├── Vertex AI Agent Engine  ← Python agent runtime (f1_agent)
   ├── Secret Manager          ← GEMINI_API_KEY
   ├── Cloud Storage           ← staging bucket + artifacts
   └── IAM                     ← dedicated service account
@@ -269,11 +269,6 @@ uv run python deployment/deploy.py \
   --rag-backend auto \
   --rag-corpus "projects/<PROJECT_NUMBER>/locations/europe-west4/ragCorpora/<RAG_CORPUS_ID>" \
   --rag-location "europe-west4" \
-  --memory-bank-enabled \
-  --memory-bank-agent-engine-name "projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>" \
-  --memory-bank-max-facts 5 \
-  --memory-bank-fetch-limit 20 \
-  --memory-bank-generate-on-correction-only \
   --example-store-enabled \
   --example-store-name "projects/<PROJECT_NUMBER>/locations/us-central1/exampleStores/<EXAMPLE_STORE_ID>" \
   --example-store-top-k 3 \
@@ -292,15 +287,11 @@ uv run python deployment/smoke_agent_engine.py \
   --project-id $PROJECT_ID \
   --location $LOCATION \
   --resource-name $RESOURCE_NAME \
-  --display-name "f1-agent" \
-  --user-id "smoke-user" \
-  --session-ttl-seconds 864000
+  --display-name "f1-agent"
 ```
 
 This smoke test now validates:
 - Agent Engine list/get
-- Sessions create/get/list/delete (managed)
-- TTL payload applied on session creation
 
 Optional bidi smoke test (P7 scaffolding):
 
@@ -434,13 +425,11 @@ Configure under **Settings > Secrets and variables > Actions**:
 | `GCP_SA_EMAIL` | `f1-agent-engine@f1-regulations-agent-chat.iam.gserviceaccount.com` |
 | `GCP_RAG_CORPUS` | `projects/<PROJECT_NUMBER>/locations/europe-west4/ragCorpora/<RAG_CORPUS_ID>` (optional) |
 | `GCP_RAG_REGION` | `europe-west4` (optional; defaults to `GCP_REGION`) |
-| `GCP_MEMORY_BANK_ENABLED` | `true` or `false` (optional; enables A3 rollout in deploy workflow) |
-| `GCP_MEMORY_BANK_AGENT_ENGINE_NAME` | `projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>` (optional, recommended when enabling A3) |
 | `GCP_CODE_EXECUTION_ENABLED` | `true` or `false` (optional; enables A6 rollout in deploy workflow) |
 | `GCP_CODE_EXECUTION_AGENT_ENGINE_NAME` | `projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>` (optional, recommended when enabling A6) |
 | `GCP_AGENT_MIN_INSTANCES` | Optional; defaults to `2` in workflow |
 | `GCP_AGENT_MAX_INSTANCES` | Optional; defaults to `6` in workflow |
-| `GCP_AGENT_CONTAINER_CONCURRENCY` | Optional; defaults to `18` in workflow (ADK async: prefer multiple of 9) |
+| `GCP_AGENT_CONTAINER_CONCURRENCY` | Optional; defaults to `18` in workflow |
 | `GCP_VERTEX_LLM_REQUEST_TYPE` | Optional; `shared` (DSQ, default) or `dedicated` (Provisioned Throughput) |
 
 > **Recommended**: Use [Workload Identity Federation](https://github.com/google-github-actions/auth#workload-identity-federation) instead of SA key for keyless authentication.
@@ -535,10 +524,8 @@ print("Deleted:", os.environ["RESOURCE_NAME"])
 - **Vector Search backend**: for `F1_RAG_BACKEND=vector_search`, set `F1_VECTOR_SEARCH_PARENT`; optional knobs: `F1_VECTOR_SEARCH_FIELD`, `F1_VECTOR_SEARCH_TOP_K`, `F1_VECTOR_SEARCH_OUTPUT_FIELDS`.
 - **RAG location**: `F1_RAG_LOCATION` can be different from Agent Engine region; use `europe-west4` (or `europe-west3`) when `us-central1` is allowlist-restricted.
 - **Example Store**: only enable dynamic few-shot when `F1_EXAMPLE_STORE_NAME` points to a valid store. Recommended region for Example Store is `us-central1`.
-- **Memory Bank**: enable only after Sessions are stable and `user_id` contract is enforced. Start with `F1_MEMORY_BANK_GENERATE_ON_CORRECTION_ONLY=true` to reduce noisy memories.
 - **Code Execution (A6)**: keep disabled by default and enable only with a clear safety policy. Current implementation is restricted to allowlisted analytical templates and `us-central1`.
 - **Fine-tuned model**: The `f1-tuned-model` secret is optional. If not set, simple queries fall back to `gemini-2.5-flash`. See [DEVELOPMENT.md](./DEVELOPMENT.md#fine-tuning-production-only) for details.
-- **Scaling**: tune `min_instances`, `max_instances`, and `container_concurrency` with load tests. For ADK async agents, start with concurrency as a multiple of 9.
+- **Scaling**: tune `min_instances`, `max_instances`, and `container_concurrency` with load tests.
 - **Data artifacts**: If PDFs or CSVs are updated, re-run `build_index.py` locally and upload the new artifacts to the bucket.
 - **Telemetry**: The deploy already enables traces and logs via OpenTelemetry. Access them in the Vertex AI console under **Dashboard** and **Traces**.
-- **Session contract**: client should propagate `user_id` + `session_id` on every request. If the app has no login, use a stable browser `client_id` and derive `user_id=anon-<hash(client_id)>`.

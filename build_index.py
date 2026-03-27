@@ -31,7 +31,9 @@ def main() -> None:
     except FileNotFoundError as e:
         console.print(f"[bold red]{e}[/bold red]\n")
 
-    console.print("[dim]You can now run: adk web f1_agent[/dim]")
+    console.print(
+        "[dim]Artifacts ready. Run tests with: uv run python -m unittest discover tests -v[/dim]"
+    )
 
 
 if __name__ == "__main__":

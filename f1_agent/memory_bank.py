@@ -158,38 +158,12 @@ def generate_memories_from_session(
 
 
 def build_adk_memory_service():
-    """Return VertexAiMemoryBankService when enabled and configured.
+    """Return no-op memory service.
 
-    This service is optional for the Runner. Returns None when disabled or if
-    the SDK feature is unavailable.
+    ADK-backed memory service wiring was removed together with the ADK runtime
+    dependency to keep the project free of Spanner-linked packages.
     """
-    settings = load_settings()
-    if not settings.enabled:
-        return None
-
-    agent_engine_id = os.environ.get(_AGENT_ENGINE_ID_ENV, "").strip()
-    if not agent_engine_id:
-        logger.debug("%s is missing; ADK memory service disabled", _AGENT_ENGINE_ID_ENV)
-        return None
-
-    try:
-        from google.adk.memory import VertexAiMemoryBankService
-    except Exception:
-        logger.warning("VertexAiMemoryBankService is unavailable", exc_info=True)
-        return None
-
-    try:
-        return VertexAiMemoryBankService(
-            project=settings.project_id,
-            location=settings.location,
-            agent_engine_id=agent_engine_id,
-        )
-    except TypeError:
-        # Express mode variants may accept fewer arguments.
-        return VertexAiMemoryBankService(agent_engine_id=agent_engine_id)
-    except Exception:
-        logger.warning("Failed to initialize ADK memory service", exc_info=True)
-        return None
+    return None
 
 
 def _retrieve_user_memories(

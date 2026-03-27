@@ -1,14 +1,16 @@
 from datetime import datetime
 from pathlib import Path
 
-from google.adk.agents import Agent
-from google.adk.agents.context_cache_config import ContextCacheConfig
-from google.adk.apps import App
-from google.adk.models.google_llm import Gemini
-from google.adk.models.llm_response import LlmResponse
-from google.adk.tools.google_search_tool import GoogleSearchTool
 from google.genai import types
 
+from f1_agent.adk_compat import (
+    Agent,
+    App,
+    ContextCacheConfig,
+    Gemini,
+    GoogleSearchTool,
+    LlmResponse,
+)
 from f1_agent.callbacks import (
     apply_grounding_policy,
     apply_response_contract,

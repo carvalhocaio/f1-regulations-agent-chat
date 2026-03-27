@@ -1,8 +1,7 @@
 import unittest
 from unittest import mock
 
-from google.adk.sessions import InMemorySessionService, VertexAiSessionService
-
+from f1_agent.adk_compat import InMemorySessionService
 from f1_agent.sessions import (
     anonymous_user_id,
     build_adk_session_service,
@@ -63,7 +62,7 @@ class SessionServiceSelectionTests(unittest.TestCase):
             service = build_adk_session_service()
             self.assertIsInstance(service, InMemorySessionService)
 
-    def test_uses_vertex_service_when_env_is_set(self):
+    def test_keeps_in_memory_service_when_env_is_set(self):
         with mock.patch.dict(
             "os.environ",
             {
@@ -74,7 +73,7 @@ class SessionServiceSelectionTests(unittest.TestCase):
             clear=False,
         ):
             service = build_adk_session_service()
-            self.assertIsInstance(service, VertexAiSessionService)
+            self.assertIsInstance(service, InMemorySessionService)
 
 
 if __name__ == "__main__":

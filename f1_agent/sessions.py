@@ -2,18 +2,21 @@
 
 This module centralizes:
 - Anonymous/stable ``user_id`` normalization (for no-login clients)
-- Session TTL config creation for Vertex AI Agent Engine Sessions
-- ADK session service selection (managed in Vertex vs local in-memory)
+- Session TTL config creation
+- Local in-memory session service selection
 """
 
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import re
 from dataclasses import dataclass
 
-from google.adk.sessions import InMemorySessionService, VertexAiSessionService
+from f1_agent.adk_compat import InMemorySessionService
+
+logger = logging.getLogger(__name__)
 
 _MAX_USER_ID_LEN = 128
 _SAFE_USER_ID_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
@@ -58,7 +61,7 @@ def resolve_user_id(*, user_id: str | None, client_id: str | None) -> str:
         return _sanitize_user_id(user_id)
     if client_id and client_id.strip():
         return anonymous_user_id(client_id)
-    raise ValueError("Provide user_id or client_id for managed sessions")
+    raise ValueError("Provide user_id or client_id for session operations")
 
 
 def build_session_identity(
@@ -90,21 +93,19 @@ def session_ttl_config(ttl_seconds: int | None) -> dict[str, str] | None:
 
 
 def build_adk_session_service():
-    """Return Vertex-managed session service when env is available.
+    """Return local in-memory session service.
 
-    Uses ``GOOGLE_CLOUD_PROJECT``, ``GOOGLE_CLOUD_LOCATION`` and
-    ``GOOGLE_CLOUD_AGENT_ENGINE_ID``. Falls back to in-memory sessions when
-    those values are not present.
+    Managed session backends were removed to eliminate Cloud Spanner-linked
+    dependencies from the runtime stack.
     """
     project = os.environ.get("GOOGLE_CLOUD_PROJECT")
     location = os.environ.get("GOOGLE_CLOUD_LOCATION")
     agent_engine_id = os.environ.get("GOOGLE_CLOUD_AGENT_ENGINE_ID")
 
     if project and location and agent_engine_id:
-        return VertexAiSessionService(
-            project=project,
-            location=location,
-            agent_engine_id=agent_engine_id,
+        logger.info(
+            "Managed session env vars detected but ignored; using in-memory "
+            "session service to keep runtime free of Spanner dependencies."
         )
 
     return InMemorySessionService()

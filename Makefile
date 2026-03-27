@@ -1,5 +1,6 @@
 run:
-	uv run adk web
+	@printf "ADK local web UI was removed with Spanner-linked dependencies.\n"
+	@printf "Use project tests for validation: uv run python -m unittest discover tests -v\n"
 
 run-managed:
-	uv run adk web --session_service_uri="agentengine://$$GOOGLE_CLOUD_AGENT_ENGINE_ID"
+	@printf "Managed sessions were removed. This project now uses in-memory sessions only.\n"

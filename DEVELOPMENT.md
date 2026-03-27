@@ -55,14 +55,10 @@ This generates:
 
 ```bash
 make run
-# or: uv run adk web f1_agent
-
-# With managed Vertex sessions (persistent context)
-# Requires GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, GOOGLE_CLOUD_AGENT_ENGINE_ID
-make run-managed
 ```
 
-Opens the ADK web UI at `http://localhost:8000`.
+`make run` now prints runtime guidance and points to the test command,
+because the previous ADK web UI entrypoint was removed.
 
 ## Environment Variables
 
@@ -259,14 +255,14 @@ F1_CODE_EXECUTION_SANDBOX_TTL_SECONDS=3600
 F1_CODE_EXECUTION_MAX_ROWS=500
 ```
 
-### Managed Sessions (A2)
+### Local Sessions (A2)
 
 `f1_agent/sessions.py` standardizes identity and session wiring for persistent context:
 
 - `resolve_user_id(user_id, client_id)` — canonical user identity (supports anonymous mode)
 - `build_session_identity(...)` — normalized `user_id/session_id` contract for clients
-- `session_ttl_config(ttl_seconds)` — TTL payload helper for Vertex session creation
-- `build_adk_session_service()` — uses `VertexAiSessionService` when env is configured; otherwise falls back to in-memory sessions
+- `session_ttl_config(ttl_seconds)` — shared TTL payload helper utility
+- `build_adk_session_service()` — always uses local `InMemorySessionService`
 
 For no-login clients, keep a stable browser `client_id` and derive deterministic anonymous `user_id` (`anon-<hash>`).
 
@@ -276,7 +272,7 @@ For no-login clients, keep a stable browser `client_id` and derive deterministic
 
 - **Gate**: `F1_MEMORY_BANK_ENABLED`
 - **Inject**: before-model retrieval by `user_id` scope (cross-session)
-- **Generate**: after-model trigger using current managed session events
+- **Generate**: after-model trigger using current session context metadata
 - **Safety default**: `F1_MEMORY_BANK_GENERATE_ON_CORRECTION_ONLY=true`
 
 This means v1 generates memory only when the user explicitly corrects the agent,
@@ -458,8 +454,8 @@ For local development, keep `F1_TUNED_MODEL` unset so routing falls back to
 
 | File | Purpose |
 |------|---------|
-| `f1_agent/agent.py` | ADK agent definition — model, tools, callbacks, instruction loading |
-| `f1_agent/runner.py` | ADK runner setup with managed (Vertex) or in-memory sessions |
+| `f1_agent/agent.py` | Agent definition — model, tools, callbacks, instruction loading |
+| `f1_agent/runner.py` | Runner setup with in-memory sessions |
 | `f1_agent/sessions.py` | Session identity normalization (`user_id`, `session_id`, `client_id`) and TTL helpers |
 | `f1_agent/callbacks.py` | Before/after-model callbacks: routing, cache, corrections |
 | `f1_agent/cache.py` | Semantic answer cache (FAISS + SQLite with TTL) |

@@ -5,7 +5,7 @@ AI assistant for Formula 1 that combines:
 - Historical **F1 World Championship data (1950-2024)** in SQLite
 - **Current and time-sensitive** information via Google Search
 
-Built with [Google ADK](https://google.github.io/adk-docs/) and powered by Gemini.
+Built with Gemini + Vertex AI SDK and powered by local runtime wiring.
 
 > This project is based on [f1-regulations-agent](https://github.com/carvalhocaio/f1-regulations-agent), the original CLI version.
 
@@ -22,7 +22,7 @@ Built with [Google ADK](https://google.github.io/adk-docs/) and powered by Gemin
 - **Model routing** — simple queries go to Flash (or fine-tuned Flash), complex ones stay on Pro
 - **Semantic cache** — near-instant responses for repeated/similar questions (cosine similarity > 0.92)
 - **Session corrections** — detects when users correct the agent (PT/EN) and avoids repeating mistakes
-- **Managed sessions (A2)** — supports Vertex AI Sessions (`user_id` + `session_id`) with TTL for persistent context
+- **Local sessions (A2)** — in-memory session identity (`user_id` + `session_id`) for runtime context
 - **Memory Bank (A3)** — optional long-term memory retrieval/generation per user across sessions
 - **Dynamic few-shot via Example Store (A5)** — retrieves similar examples of real errors at runtime (feature-flagged)
 - **Code Execution sandbox (A6, restricted mode)** — allowlisted analytical templates for simulations/statistics (feature-flagged)
@@ -52,7 +52,7 @@ User question
 [route_model] -----> Simple? -> Flash/Tuned | Complex? -> Pro
     |
     v
-ADK Agent (Gemini)
+Agent Runtime (Gemini)
     |
     |-- Regulations -----------> search_regulations(query)
     |                             -> FAISS + BM25 hybrid search
@@ -72,7 +72,7 @@ ADK Agent (Gemini)
     v
 [detect_corrections] --> Store if user corrected the agent
     |
-[sync_memory_bank] ---> Generate long-term memory from managed session
+[sync_memory_bank] ---> Generate long-term memory from current session context
     |
 [store_cache] --------> Cache the answer for future reuse
                          (time-sensitive/web queries are not reused via cache)
@@ -122,7 +122,6 @@ Server -> client events (`stream_protocol_version=v1`):
 
 ## Stack
 
-- [Google ADK](https://google.github.io/adk-docs/) — agent framework and local web UI
 - [Gemini 2.5 Pro / Flash](https://deepmind.google/technologies/gemini/) — LLM with dynamic routing
 - [LangChain](https://python.langchain.com/) + [PyMuPDF](https://pymupdf.readthedocs.io/) — PDF ingestion and chunking
 - [FAISS](https://github.com/facebookresearch/faiss) + [BM25](https://github.com/dorianbrown/rank_bm25) — hybrid vector + keyword search with reciprocal rank fusion
@@ -254,9 +253,9 @@ For detailed setup instructions, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 ```text
 f1-regulations-agent-chat/
 ├── f1_agent/
-│   ├── agent.py                # ADK agent definition, tools, and callbacks
+│   ├── agent.py                # Agent definition, tools, and callbacks
 │   ├── callbacks.py            # Model routing, semantic cache, session corrections
-│   ├── runner.py               # ADK runner wiring for managed/local sessions
+│   ├── runner.py               # Runner wiring for local in-memory sessions
 │   ├── sessions.py             # user_id/session_id normalization helpers
 │   ├── streaming_protocol.py    # Stream event envelope (`stream_protocol_version=v1`)
 │   ├── bidi.py                 # Helpers to convert bidi SDK events into protocol events
