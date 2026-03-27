@@ -107,6 +107,13 @@ Client -> server messages:
 - `{"type":"ping"}`
 - `{"type":"close"}`
 
+Optional structured response control (critical routes only):
+- include `"response_contract_id"` in `input` messages when machine-readable JSON is required
+- supported contract IDs:
+  - `sources_block_v1`
+  - `comparison_table_v1`
+- runtime validates JSON and schema after model generation; invalid payloads are replaced by contract-compatible fallback JSON and logged as `structured_response_validation`
+
 Server -> client events (`stream_protocol_version=v1`):
 - `turn_start`
 - `delta`
@@ -182,6 +189,9 @@ GOOGLE_API_KEY=your-key-here
 
 # Optional (P6 throughput routing). Default is DSQ/pay-as-you-go.
 # F1_VERTEX_LLM_REQUEST_TYPE=shared  # shared|dedicated
+
+# Optional (Q3 structured outputs). Enabled by default.
+# F1_STRUCTURED_RESPONSE_ENABLED=true
 
 # Optional (P2 resilience defaults tuned for chat fail-fast).
 # F1_LLM_RETRY_ENABLED=true

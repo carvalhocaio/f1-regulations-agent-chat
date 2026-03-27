@@ -111,6 +111,40 @@ class WebSocketBridgeTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertIn("aborted", reasons)
 
+    async def test_websocket_bidi_loop_forwards_response_contract_id(self):
+        captured: list[_FakeConnection] = []
+
+        @asynccontextmanager
+        async def _factory():
+            conn = _FakeConnection(
+                [
+                    {"bidiStreamOutput": {"output": "ok"}},
+                    {"bidiStreamOutput": {"output": "end of turn"}},
+                ]
+            )
+            captured.append(conn)
+            yield conn
+
+        ws = _FakeWebSocket(
+            [
+                {
+                    "type": "input",
+                    "request_id": "req-structured",
+                    "input": "compare these",
+                    "response_contract_id": "comparison_table_v1",
+                },
+                {"type": "close"},
+            ]
+        )
+
+        await websocket_bidi_loop(websocket=ws, connection_factory=_factory)
+
+        self.assertTrue(captured)
+        sent_payload = captured[0].sent[0]
+        self.assertEqual(
+            sent_payload.get("response_contract_id"), "comparison_table_v1"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

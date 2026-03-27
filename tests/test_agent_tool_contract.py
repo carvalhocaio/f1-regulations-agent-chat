@@ -75,11 +75,28 @@ class AgentToolContractTests(unittest.TestCase):
             callback_names.index("inject_dynamic_examples"),
             callback_names.index("route_model"),
         )
+        self.assertLess(
+            callback_names.index("route_model"),
+            callback_names.index("apply_throughput_request_type"),
+        )
+        self.assertLess(
+            callback_names.index("apply_throughput_request_type"),
+            callback_names.index("apply_response_contract"),
+        )
+        self.assertLess(
+            callback_names.index("apply_response_contract"),
+            callback_names.index("preflight_token_check"),
+        )
 
     def test_after_model_callback_includes_memory_sync(self):
         callback_names = [cb.__name__ for cb in root_agent.after_model_callback]
 
+        self.assertIn("validate_structured_response", callback_names)
         self.assertIn("sync_memory_bank", callback_names)
+        self.assertLess(
+            callback_names.index("log_context_cache_metrics"),
+            callback_names.index("validate_structured_response"),
+        )
         self.assertLess(
             callback_names.index("detect_corrections"),
             callback_names.index("sync_memory_bank"),
