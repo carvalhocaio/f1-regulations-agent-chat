@@ -108,18 +108,20 @@ class InjectCorrectionsTests(unittest.TestCase):
     def test_no_corrections_no_change(self):
         ctx = _FakeContext(state=_FakeState())
         req = _FakeRequest()
-        original = req.config.system_instruction
         inject_corrections(ctx, req)
-        self.assertEqual(req.config.system_instruction, original)
+        self.assertEqual(len(req.contents), 0)
 
-    def test_corrections_appended_to_instruction(self):
+    def test_corrections_prepended_to_contents(self):
         state = _FakeState()
         state[_CORRECTIONS_KEY] = ["Hamilton has 7 titles"]
         ctx = _FakeContext(state=state)
         req = _FakeRequest()
         inject_corrections(ctx, req)
-        self.assertIn("Hamilton has 7 titles", req.config.system_instruction)
-        self.assertIn("User corrections", req.config.system_instruction)
+        # Corrections are now injected as user content (not system instruction)
+        self.assertEqual(len(req.contents), 1)
+        injected_text = req.contents[0].parts[0].text
+        self.assertIn("Hamilton has 7 titles", injected_text)
+        self.assertIn("User corrections", injected_text)
 
 
 class DetectCorrectionsCallbackTests(unittest.TestCase):

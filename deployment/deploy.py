@@ -352,6 +352,31 @@ def main():
         default=500,
         help="Max row-like items accepted by analytical payload validators",
     )
+    # ── Context Cache (Gemini native prompt caching) ──
+    parser.add_argument(
+        "--context-cache-enabled",
+        action="store_true",
+        default=False,
+        help="Enable explicit Gemini context caching via ADK ContextCacheConfig",
+    )
+    parser.add_argument(
+        "--context-cache-intervals",
+        type=int,
+        default=10,
+        help="Max invocations per explicit cache before recreation",
+    )
+    parser.add_argument(
+        "--context-cache-ttl",
+        type=int,
+        default=1800,
+        help="Explicit cache TTL in seconds (default: 30 min)",
+    )
+    parser.add_argument(
+        "--context-cache-min-tokens",
+        type=int,
+        default=4096,
+        help="Minimum token count to trigger explicit caching",
+    )
     args = parser.parse_args()
 
     if args.example_store_enabled and not args.example_store_name:
@@ -410,6 +435,11 @@ def main():
             max(300, args.code_execution_sandbox_ttl_seconds)
         ),
         "F1_CODE_EXECUTION_MAX_ROWS": str(max(10, args.code_execution_max_rows)),
+        # Context Cache (Gemini native prompt caching via ADK ContextCacheConfig)
+        "F1_CONTEXT_CACHE_ENABLED": "true" if args.context_cache_enabled else "false",
+        "F1_CONTEXT_CACHE_INTERVALS": str(max(1, args.context_cache_intervals)),
+        "F1_CONTEXT_CACHE_TTL": str(max(60, args.context_cache_ttl)),
+        "F1_CONTEXT_CACHE_MIN_TOKENS": str(max(0, args.context_cache_min_tokens)),
     }
 
     if args.rag_corpus:

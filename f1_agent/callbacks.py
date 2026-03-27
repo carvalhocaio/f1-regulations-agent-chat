@@ -37,6 +37,22 @@ logger = logging.getLogger(__name__)
 
 _DB_MAX_YEAR = 2024
 
+
+def _prepend_user_context(llm_request, text: str) -> None:
+    """Insert dynamic context as a user content at the start of contents.
+
+    By placing dynamic per-request information (temporal context, corrections,
+    memories, examples) in user content instead of system_instruction, we keep
+    the system instruction stable across requests.  This enables Gemini context
+    caching — both implicit (automatic prefix dedup) and explicit (via ADK
+    ContextCacheConfig) — since the cache fingerprint depends on a stable
+    system_instruction.
+    """
+    llm_request.contents.insert(
+        0,
+        types.Content(role="user", parts=[types.Part(text=text)]),
+    )
+
 # ── Model routing ───────────────────────────────────────────────────────
 
 # Fine-tuned Flash model for F1 queries (Vertex AI endpoint).
@@ -579,8 +595,9 @@ def inject_corrections(callback_context, llm_request):
     """Before-model callback: inject stored corrections into the prompt.
 
     If the user has previously corrected the agent in this session,
-    append those corrections to the system instruction so the model
-    is aware of them and doesn't repeat the same mistakes.
+    prepend those corrections as user content so the model is aware of
+    them without mutating the system instruction (preserving cache
+    fingerprint stability).
     """
     corrections = _get_corrections(callback_context)
     if not corrections:
@@ -588,13 +605,13 @@ def inject_corrections(callback_context, llm_request):
 
     corrections_text = "\n".join(f"- {c}" for c in corrections)
     addendum = (
-        "\n\n## User corrections from this session\n"
+        "## User corrections from this session\n"
         "The user has corrected you on the following points. "
         "Take these into account and do NOT repeat the same mistakes:\n"
         f"{corrections_text}"
     )
 
-    llm_request.append_instructions([addendum])
+    _prepend_user_context(llm_request, addendum)
     logger.debug("Injected %d corrections into prompt", len(corrections))
     return None
 
@@ -611,7 +628,7 @@ def inject_dynamic_examples(callback_context, llm_request):
         )
         return None
 
-    llm_request.append_instructions([addendum])
+    _prepend_user_context(llm_request, addendum)
     logger.info(
         "Injected dynamic examples: count=%s top_similarity=%s",
         metadata.get("example_count"),
@@ -636,21 +653,25 @@ def inject_long_term_memories(callback_context, llm_request):
         )
         return None
 
-    llm_request.append_instructions([addendum])
+    _prepend_user_context(llm_request, addendum)
     logger.info("Injected long-term memories: count=%s", metadata.get("memory_count"))
     return None
 
 
 def inject_runtime_temporal_context(callback_context, llm_request):
-    """Before-model callback: inject dynamic date/year guidance every request."""
-    addenda = [_runtime_temporal_addendum()]
+    """Before-model callback: inject dynamic date/year guidance every request.
+
+    Inserts temporal context as user content to keep the system instruction
+    stable for context caching.
+    """
+    parts = [_runtime_temporal_addendum()]
 
     user_text = _extract_user_text(callback_context, llm_request)
     resolution = _resolve_temporal_references(user_text)
     if resolution:
-        addenda.append(resolution)
+        parts.append(resolution)
 
-    llm_request.append_instructions(addenda)
+    _prepend_user_context(llm_request, "\n\n".join(parts))
     return None
 
 
@@ -708,5 +729,34 @@ def sync_memory_bank(callback_context, llm_response):
     )
     if generated:
         logger.info("Triggered memory generation for session: %s", session_name)
+
+    return None
+
+
+def log_context_cache_metrics(callback_context, llm_response):
+    """After-model callback: log Gemini context cache token metrics.
+
+    Inspects ``usage_metadata`` on the response to report how many prompt
+    tokens were served from cache vs total, enabling monitoring of cache
+    effectiveness.
+    """
+    del callback_context  # unused
+    if not llm_response:
+        return None
+
+    usage = getattr(llm_response, "usage_metadata", None)
+    if not usage:
+        return None
+
+    cached = getattr(usage, "cached_content_token_count", 0) or 0
+    total = getattr(usage, "prompt_token_count", 0) or 0
+
+    if total > 0:
+        logger.info(
+            "context_cache | prompt_tokens=%d cached_tokens=%d ratio=%.2f",
+            total,
+            cached,
+            cached / total,
+        )
 
     return None
