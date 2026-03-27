@@ -7,7 +7,7 @@ interactive clients, independent of the raw SDK event shape.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 STREAM_PROTOCOL_VERSION = "v1"
@@ -28,7 +28,7 @@ _VALID_EVENT_TYPES = {
 
 
 def utc_now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+    return datetime.now(timezone.utc).isoformat()  # noqa: UP017 (py3.10 runtime)
 
 
 def build_stream_event(
