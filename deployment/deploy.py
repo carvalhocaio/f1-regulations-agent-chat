@@ -250,7 +250,7 @@ def main():
     parser.add_argument(
         "--rag-backend",
         default="auto",
-        choices=["auto", "local", "vertex"],
+        choices=["auto", "local", "vertex", "vector_search"],
         help="RAG backend routing mode for regulations retrieval",
     )
     parser.add_argument(
@@ -274,6 +274,33 @@ def main():
         type=float,
         default=None,
         help="Optional Vertex RAG vector distance threshold",
+    )
+    parser.add_argument(
+        "--vector-search-parent",
+        default="",
+        help=(
+            "Vector Search collection resource path, e.g. "
+            "projects/<PROJECT_ID>/locations/<LOCATION>/collections/<COLLECTION_ID>"
+        ),
+    )
+    parser.add_argument(
+        "--vector-search-field",
+        default="embedding",
+        help="Vector field name used by Vector Search queries",
+    )
+    parser.add_argument(
+        "--vector-search-top-k",
+        type=int,
+        default=5,
+        help="Top-k documents retrieved from Vector Search",
+    )
+    parser.add_argument(
+        "--vector-search-output-fields",
+        default="data_fields,metadata_fields",
+        help=(
+            "Comma-separated output fields for Vector Search response: "
+            "data_fields,metadata_fields,vector_fields"
+        ),
     )
     parser.add_argument(
         "--example-store-enabled",
@@ -412,6 +439,11 @@ def main():
             "--example-store-enabled requires --example-store-name "
             "(projects/.../locations/.../exampleStores/...)"
         )
+    if args.rag_backend == "vector_search" and not args.vector_search_parent:
+        raise ValueError(
+            "--rag-backend=vector_search requires --vector-search-parent "
+            "(projects/.../locations/.../collections/...)"
+        )
 
     _validate_runtime_scaling(args)
 
@@ -441,6 +473,10 @@ def main():
         "F1_RAG_PROJECT_ID": args.project_id,
         "F1_RAG_LOCATION": args.rag_location or args.location,
         "F1_RAG_TOP_K": str(max(1, args.rag_top_k)),
+        "F1_VECTOR_SEARCH_PARENT": args.vector_search_parent,
+        "F1_VECTOR_SEARCH_FIELD": args.vector_search_field,
+        "F1_VECTOR_SEARCH_TOP_K": str(max(1, args.vector_search_top_k)),
+        "F1_VECTOR_SEARCH_OUTPUT_FIELDS": args.vector_search_output_fields,
         "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
         "F1_EXAMPLE_STORE_ENABLED": "true" if args.example_store_enabled else "false",

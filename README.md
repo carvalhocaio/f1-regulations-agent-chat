@@ -146,12 +146,16 @@ GOOGLE_API_KEY=your-key-here
 # F1_TUNED_MODEL=projects/<PROJECT_NUMBER>/locations/us-central1/endpoints/<ENDPOINT_ID>
 
 # Optional (A4 phased rollout). Keep local by default.
-# F1_RAG_BACKEND=local           # local|auto|vertex
+# F1_RAG_BACKEND=local           # local|auto|vertex|vector_search
 # F1_RAG_CORPUS=projects/<PROJECT_NUMBER>/locations/us-central1/ragCorpora/<RAG_CORPUS_ID>
 # F1_RAG_PROJECT_ID=<PROJECT_ID>
 # F1_RAG_LOCATION=us-central1
 # F1_RAG_TOP_K=5
 # F1_RAG_VECTOR_DISTANCE_THRESHOLD=0.5
+# F1_VECTOR_SEARCH_PARENT=projects/<PROJECT_ID>/locations/us-central1/collections/<COLLECTION_ID>
+# F1_VECTOR_SEARCH_FIELD=embedding
+# F1_VECTOR_SEARCH_TOP_K=5
+# F1_VECTOR_SEARCH_OUTPUT_FIELDS=data_fields,metadata_fields
 
 # Optional (A5 dynamic few-shot). Keep disabled by default.
 # F1_EXAMPLE_STORE_ENABLED=false
@@ -252,6 +256,7 @@ f1-regulations-agent-chat/
 │   ├── tools.py                # Agent tools (regulations, history, search)
 │   ├── rag.py                  # PDF loading, chunking, FAISS + BM25 hybrid search
 │   ├── rag_vertex.py           # Vertex RAG adapter (A4 phased externalization)
+│   ├── rag_vector_search.py    # Vertex Vector Search adapter (P8 candidate backend)
 │   ├── db.py                   # SQLite schema/build/query helpers
 │   ├── sql_templates.py        # 15 pre-built SQL templates for common queries
 │   ├── prompts/
@@ -265,6 +270,8 @@ f1-regulations-agent-chat/
 │   ├── deploy.py               # Vertex AI Agent Engine deploy script
 │   ├── smoke_bidi_agent_engine.py # Bidi streaming smoke test (P7)
 │   ├── benchmark_streaming_modes.py # Compare TTFT across query/streaming modes
+│   ├── benchmark_retrieval_backends.py # Compare local/vertex/vector_search retrieval
+│   ├── vector_search_bootstrap.py # Create Vector Search collection and ingest chunks
 │   ├── websocket_bidi_server.py # FastAPI WebSocket bridge for interactive bidi chat
 │   ├── rag_engine_ingest.py    # Vertex RAG corpus create/import helper
 │   └── terraform/              # GCP infrastructure as code

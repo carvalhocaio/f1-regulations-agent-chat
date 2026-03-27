@@ -71,12 +71,16 @@ Opens the ADK web UI at `http://localhost:8000`.
 | `GOOGLE_API_KEY` | Yes | — | Gemini API key for LLM and embeddings |
 | `GEMINI_EMBEDDING_MODEL` | No | `models/gemini-embedding-2-preview` | Embedding model for RAG and cache |
 | `F1_TUNED_MODEL` | No | `gemini-2.5-flash` | Fine-tuned model endpoint (**production only** — see [Fine-Tuning](#fine-tuning-production-only)) |
-| `F1_RAG_BACKEND` | No | `auto` | Regulations retrieval backend: `auto`, `local`, or `vertex` |
+| `F1_RAG_BACKEND` | No | `auto` | Regulations retrieval backend: `auto`, `local`, `vertex`, or `vector_search` |
 | `F1_RAG_CORPUS` | No | — | Vertex RAG corpus resource name (required when Vertex retrieval is used) |
 | `F1_RAG_PROJECT_ID` | No | — | Explicit project for Vertex RAG client initialization |
 | `F1_RAG_LOCATION` | No | — | Explicit location for Vertex RAG client initialization |
 | `F1_RAG_TOP_K` | No | `5` | Top-k retrieved chunks for Vertex RAG |
 | `F1_RAG_VECTOR_DISTANCE_THRESHOLD` | No | — | Optional retrieval distance threshold for Vertex RAG |
+| `F1_VECTOR_SEARCH_PARENT` | No | — | Vector Search collection path (`projects/.../locations/.../collections/...`) |
+| `F1_VECTOR_SEARCH_FIELD` | No | `embedding` | Vector field searched by Vertex Vector Search |
+| `F1_VECTOR_SEARCH_TOP_K` | No | `5` | Top-k retrieved chunks for Vector Search backend |
+| `F1_VECTOR_SEARCH_OUTPUT_FIELDS` | No | `data_fields,metadata_fields` | Output fields requested from Vector Search response |
 | `F1_EXAMPLE_STORE_ENABLED` | No | `false` | Enables dynamic few-shot retrieval from Example Store |
 | `F1_EXAMPLE_STORE_NAME` | No | — | Example Store resource name: `projects/.../locations/.../exampleStores/...` |
 | `F1_EXAMPLE_STORE_TOP_K` | No | `3` | Number of candidate examples retrieved per request |
@@ -178,9 +182,14 @@ Chunking is article-aware: separators prioritize `Article X.Y` boundaries, and a
 
 - `F1_RAG_BACKEND=local` — always use local FAISS+BM25 (`f1_agent/rag.py`)
 - `F1_RAG_BACKEND=vertex` — try Vertex RAG first; fallback to local if retrieval fails/returns empty
-- `F1_RAG_BACKEND=auto` (default) — prefer Vertex when configured, with automatic local fallback
+- `F1_RAG_BACKEND=vector_search` — try Vertex Vector Search first; fallback to local if empty/unavailable
+- `F1_RAG_BACKEND=auto` (default) — try Vector Search, then Vertex RAG, then local fallback
 
-The Vertex adapter lives in `f1_agent/rag_vertex.py` and normalizes results to the same response shape used by existing tool consumers.
+Adapters:
+- `f1_agent/rag_vertex.py` for Vertex RAG
+- `f1_agent/rag_vector_search.py` for Vertex Vector Search
+
+Both adapters normalize results to the same `Document` shape used by tool consumers.
 
 ### Session Corrections
 

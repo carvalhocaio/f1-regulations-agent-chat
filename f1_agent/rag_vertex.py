@@ -38,7 +38,7 @@ def vertex_hybrid_search(query: str, k: int = 5) -> list[Document]:
         logger_instance=logger,
     )
 
-    contexts = list(getattr(response, "contexts", []) or [])
+    contexts = _extract_contexts(response)
     docs: list[Document] = []
     for ctx in contexts:
         text = _context_text(ctx)
@@ -87,12 +87,34 @@ def _call_retrieval_query(
     similarity_top_k: int,
     threshold: float | None,
 ):
+    # Newer SDK signature (vertexai.rag):
+    # retrieval_query(text=..., rag_resources=[RagResource(...)],
+    #                 rag_retrieval_config=RagRetrievalConfig(...))
+    try:
+        rag_resources = [rag_module.RagResource(rag_corpus=corpus_name)]
+        retrieval_filter = (
+            rag_module.Filter(vector_distance_threshold=threshold)
+            if threshold is not None
+            else None
+        )
+        rag_retrieval_config = rag_module.RagRetrievalConfig(
+            top_k=similarity_top_k,
+            filter=retrieval_filter,
+        )
+        return rag_module.retrieval_query(
+            text=query,
+            rag_resources=rag_resources,
+            rag_retrieval_config=rag_retrieval_config,
+        )
+    except (TypeError, AttributeError):
+        pass
+
+    # Legacy/alternate signature fallback.
     kwargs = {
         "corpus_names": [corpus_name],
         "text": query,
         "similarity_top_k": similarity_top_k,
     }
-
     if threshold is not None:
         kwargs["vector_distance_threshold"] = threshold
 
@@ -117,6 +139,32 @@ def _context_text(context: Any) -> str:
         return str(candidate)
 
     return ""
+
+
+def _extract_contexts(response: Any) -> list[Any]:
+    top = getattr(response, "contexts", None)
+    if top is None:
+        if isinstance(response, dict):
+            top = response.get("contexts")
+        if top is None:
+            return []
+
+    nested = getattr(top, "contexts", None)
+    if nested is not None:
+        return list(nested or [])
+
+    if isinstance(top, list):
+        return top
+    if isinstance(top, tuple):
+        return list(top)
+    if isinstance(top, dict):
+        inner = top.get("contexts")
+        if isinstance(inner, list):
+            return inner
+    try:
+        return list(top)
+    except TypeError:
+        return []
 
 
 def _context_field(context: Any, name: str) -> Any:

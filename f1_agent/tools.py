@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 _RAG_BACKEND_ENV = "F1_RAG_BACKEND"
 _RAG_BACKEND_LOCAL = "local"
 _RAG_BACKEND_VERTEX = "vertex"
+_RAG_BACKEND_VECTOR_SEARCH = "vector_search"
 _RAG_BACKEND_AUTO = "auto"
 
 _FORBIDDEN_RE = re.compile(
@@ -41,10 +42,22 @@ def search_regulations(query: str) -> dict:
                 "Vertex RAG returned no results; falling back to local search"
             )
             results = _search_regulations_local(query, k=5)
-    else:
-        results = _search_regulations_vertex(query, k=5)
+    elif backend == _RAG_BACKEND_VECTOR_SEARCH:
+        results = _search_regulations_vector_search(query, k=5)
         if not results:
+            logger.warning(
+                "Vector Search returned no results; falling back to local search"
+            )
             results = _search_regulations_local(query, k=5)
+    else:
+        for candidate in (
+            _search_regulations_vector_search,
+            _search_regulations_vertex,
+            _search_regulations_local,
+        ):
+            results = candidate(query, k=5)
+            if results:
+                break
 
     if not results:
         return {"status": "no_results", "message": "No relevant regulations found."}
@@ -67,7 +80,12 @@ def search_regulations(query: str) -> dict:
 
 def _selected_rag_backend() -> str:
     raw = os.environ.get(_RAG_BACKEND_ENV, _RAG_BACKEND_AUTO).strip().lower()
-    if raw in {_RAG_BACKEND_LOCAL, _RAG_BACKEND_VERTEX, _RAG_BACKEND_AUTO}:
+    if raw in {
+        _RAG_BACKEND_LOCAL,
+        _RAG_BACKEND_VERTEX,
+        _RAG_BACKEND_VECTOR_SEARCH,
+        _RAG_BACKEND_AUTO,
+    }:
         return raw
     return _RAG_BACKEND_AUTO
 
@@ -84,6 +102,18 @@ def _search_regulations_vertex(query: str, k: int = 5):
     except Exception:
         logger.warning(
             "Vertex RAG unavailable; falling back to local search", exc_info=True
+        )
+        return []
+
+
+def _search_regulations_vector_search(query: str, k: int = 5):
+    try:
+        from f1_agent.rag_vector_search import vector_search_retrieve
+
+        return vector_search_retrieve(query, k=k)
+    except Exception:
+        logger.warning(
+            "Vector Search unavailable; falling back to next backend", exc_info=True
         )
         return []
 

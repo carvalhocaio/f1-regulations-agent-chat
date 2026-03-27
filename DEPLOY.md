@@ -381,6 +381,42 @@ The script emits JSON with p50/p95/p99 for ANN lookup and a synthetic
 `vector_scan_*` O(N) baseline over vectors only.
 Track `ann_p95_ms` across sizes to confirm sublinear behavior.
 
+### 6.4) Retrieval backend benchmark (P8)
+
+Before benchmarking `vector_search`, bootstrap a collection and ingest chunks:
+
+```fish
+uv run python deployment/vector_search_bootstrap.py \
+  --project-id $PROJECT_ID \
+  --location us-central1 \
+  --collection-id f1-regulations-benchmark \
+  --max-docs 400
+```
+
+Then set:
+
+```fish
+set -x F1_VECTOR_SEARCH_PARENT "projects/$PROJECT_ID/locations/us-central1/collections/f1-regulations-benchmark"
+set -x F1_VECTOR_SEARCH_FIELD "embedding"
+```
+
+Use this benchmark to compare retrieval backends (`local`, `vertex`,
+`vector_search`) over the same query dataset:
+
+```fish
+uv run python deployment/benchmark_retrieval_backends.py \
+  --queries-file data/benchmarks/retrieval_queries.jsonl \
+  --backends "local,vertex,vector_search" \
+  --top-k 5 \
+  --concurrency 10
+```
+
+Each JSONL row should follow:
+
+```json
+{"query":"What is Article 5.2 about?","expected_ids":["gs://docs/section_a.pdf|12|5.2|..."]}
+```
+
 ---
 
 ## 7) CI/CD — GitHub Actions
@@ -485,7 +521,8 @@ print("Deleted:", os.environ["RESOURCE_NAME"])
 - **Reserved variables**: Never set `GOOGLE_CLOUD_PROJECT` or `GOOGLE_APPLICATION_CREDENTIALS` as env vars in the deploy. Use `vertexai.Client(...)` with explicit `project` and `location`.
 - **Region**: Agent Engine must use the same region as the staging bucket.
 - **LLM model version**: Production uses `gemini-2.5-pro` for complex queries and the fine-tuned Flash endpoint (`F1_TUNED_MODEL`) for simple queries. Model routing is automatic via callbacks.
-- **RAG backend**: `F1_RAG_BACKEND=auto` is the recommended default. It prefers Vertex RAG when configured (`F1_RAG_CORPUS`) and falls back to local FAISS+BM25 for resilience.
+- **RAG backend**: `F1_RAG_BACKEND=auto` is the recommended default. It tries `vector_search`, then `vertex`, then local FAISS+BM25 fallback.
+- **Vector Search backend**: for `F1_RAG_BACKEND=vector_search`, set `F1_VECTOR_SEARCH_PARENT`; optional knobs: `F1_VECTOR_SEARCH_FIELD`, `F1_VECTOR_SEARCH_TOP_K`, `F1_VECTOR_SEARCH_OUTPUT_FIELDS`.
 - **RAG location**: `F1_RAG_LOCATION` can be different from Agent Engine region; use `europe-west4` (or `europe-west3`) when `us-central1` is allowlist-restricted.
 - **Example Store**: only enable dynamic few-shot when `F1_EXAMPLE_STORE_NAME` points to a valid store. Recommended region for Example Store is `us-central1`.
 - **Memory Bank**: enable only after Sessions are stable and `user_id` contract is enforced. Start with `F1_MEMORY_BANK_GENERATE_ON_CORRECTION_ONLY=true` to reduce noisy memories.
