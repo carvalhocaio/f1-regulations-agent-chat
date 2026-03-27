@@ -448,13 +448,23 @@ Configure under **Settings > Secrets and variables > Actions**:
 ### 7.2) Workflows
 
 - **`.github/workflows/ci.yml`** — Lint and format check on PRs
-- **`.github/workflows/deploy.yml`** — Deploy to production on merge to `main` (requires environment approval). Pass `--rag-backend auto`, `--rag-corpus`, and optional `--rag-location`.
+- **`.github/workflows/deploy.yml`** — Release pipeline on merge to `main`:
+  1. Deploys `f1-agent-candidate`
+  2. Runs Gen AI Evaluation on `data/evals/agent_regression.v1.jsonl`
+  3. Applies gate from `config/eval_thresholds.json` (absolute minimum + regression delta vs baseline)
+  4. Promotes to `f1-agent` production only if gate passes (still requires environment approval)
 
 ### 7.3) Configure GitHub Environment
 
 Under **Settings > Environments**, create:
 
 - **production** — with **Required reviewers** (manual approval before deploy)
+
+### 7.4) Evaluation artifacts and baseline
+
+- Release reports are stored at `gs://<PROJECT_ID>-artifacts/eval/releases/<GIT_SHA>/eval_report.json`.
+- Approved baseline is stored at `gs://<PROJECT_ID>-artifacts/eval/baseline/eval_report.json`.
+- On first run (no baseline yet), the gate enforces only absolute minimum thresholds.
 
 ---
 

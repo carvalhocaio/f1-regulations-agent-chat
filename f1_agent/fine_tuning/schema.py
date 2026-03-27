@@ -10,100 +10,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from f1_agent.tool_contract import build_tool_declarations
+
 # ── Tool declarations (mirrors what the ADK agent exposes) ──────────────
 
-TOOL_DECLARATIONS: list[dict[str, Any]] = [
-    {
-        "name": "query_f1_history_template",
-        "description": (
-            "Execute a pre-built SQL template against the F1 historical "
-            "database (1950-2024)."
-        ),
-        "parameters": {
-            "type": "OBJECT",
-            "properties": {
-                "template_name": {
-                    "type": "STRING",
-                    "description": "Name of the SQL template.",
-                },
-                "params": {
-                    "type": "STRING",
-                    "description": "JSON string with template parameters.",
-                },
-            },
-            "required": ["template_name"],
-        },
-    },
-    {
-        "name": "query_f1_history",
-        "description": (
-            "Execute a raw SQLite SELECT query against the F1 historical "
-            "database (1950-2024)."
-        ),
-        "parameters": {
-            "type": "OBJECT",
-            "properties": {
-                "sql_query": {
-                    "type": "STRING",
-                    "description": "A SQLite SELECT query.",
-                },
-            },
-            "required": ["sql_query"],
-        },
-    },
-    {
-        "name": "search_regulations",
-        "description": "Search the FIA 2026 F1 Regulations.",
-        "parameters": {
-            "type": "OBJECT",
-            "properties": {
-                "query": {
-                    "type": "STRING",
-                    "description": "Search query about F1 regulations.",
-                },
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "google_search_agent",
-        "description": "Search the web for current/live F1 information.",
-        "parameters": {
-            "type": "OBJECT",
-            "properties": {
-                "request": {
-                    "type": "STRING",
-                    "description": "Web search request.",
-                },
-            },
-            "required": ["request"],
-        },
-    },
-    {
-        "name": "run_analytical_code",
-        "description": (
-            "Run restricted analytical templates in a managed sandbox for "
-            "advanced computations."
-        ),
-        "parameters": {
-            "type": "OBJECT",
-            "properties": {
-                "task_type": {
-                    "type": "STRING",
-                    "description": (
-                        "Allowlisted analytical task: summary_stats, "
-                        "what_if_points, distribution_bins."
-                    ),
-                },
-                "payload": {
-                    "type": "STRING",
-                    "description": "JSON string with task-specific input data.",
-                },
-            },
-            "required": ["task_type"],
-        },
-    },
-]
+TOOL_DECLARATIONS: list[dict[str, Any]] = build_tool_declarations()
 
 SYSTEM_INSTRUCTION = (
     "You are an expert assistant on Formula 1, with deep knowledge of the "

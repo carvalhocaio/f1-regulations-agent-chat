@@ -474,7 +474,7 @@ def gen_regulation_lookups() -> list[dict]:
 
 
 def gen_current_season() -> list[dict]:
-    """Generate examples that should use google_search_agent."""
+    """Generate examples that should use google_search."""
     examples = []
     questions = [
         (
@@ -500,13 +500,13 @@ def gen_current_season() -> list[dict]:
                 user_message=question,
                 function_calls=[
                     {
-                        "name": "google_search_agent",
+                        "name": "google_search",
                         "args": {"request": search_request},
                     }
                 ],
                 function_responses=[
                     {
-                        "name": "google_search_agent",
+                        "name": "google_search",
                         "response": {"status": "success", "results": "..."},
                     }
                 ],
@@ -545,8 +545,8 @@ def gen_temporal_reasoning() -> list[dict]:
             f"From historical database:\n"
             + "\n".join(db_lines)
             + "\n\nFrom web search:\n"
-            "- **2025**: [from google_search_agent]\n"
-            "- **2026**: [from google_search_agent]\n\n"
+            "- **2025**: [from google_search]\n"
+            "- **2026**: [from google_search]\n\n"
             "---\n**Sources:**\n\n"
             "📊 *Historical Data:*\n"
             "- **Kaggle — F1 World Championship (1950-2024)**\n\n"
@@ -568,7 +568,7 @@ def gen_temporal_reasoning() -> list[dict]:
                         },
                     },
                     {
-                        "name": "google_search_agent",
+                        "name": "google_search",
                         "args": {"request": "F1 world drivers champion 2025 and 2026"},
                     },
                 ],
@@ -582,7 +582,7 @@ def gen_temporal_reasoning() -> list[dict]:
                         },
                     },
                     {
-                        "name": "google_search_agent",
+                        "name": "google_search",
                         "response": {"status": "success", "results": "..."},
                     },
                 ],

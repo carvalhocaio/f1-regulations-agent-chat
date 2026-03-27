@@ -1,0 +1,39 @@
+{
+  "version": "v1",
+  "source_file": "data/fine_tuning_live/live_failures.raw.v1.jsonl",
+  "generated_at_utc": "2026-03-27T19:15:40.200105+00:00",
+  "redaction_enabled": true,
+  "split": {
+    "test_ratio": 0.2,
+    "seed": 42
+  },
+  "counts": {
+    "curated_cases": 11,
+    "train_examples": 9,
+    "test_examples": 2
+  },
+  "summary": {
+    "total_cases": 11,
+    "by_category": {
+      "factuality": 1,
+      "historical_fact": 2,
+      "regulation_grounding": 2,
+      "response_format": 1,
+      "temporal_reasoning": 2,
+      "tool_routing": 3
+    },
+    "by_failure_type": {
+      "final_response_regression": 7,
+      "tool_or_format_regression": 4
+    },
+    "by_criticality": {
+      "high": 7,
+      "medium": 4
+    }
+  },
+  "outputs": {
+    "live_cases": "data/fine_tuning_live/live_failures.v1.jsonl",
+    "train": "data/fine_tuning_live/dataset.train.v1.jsonl",
+    "test": "data/fine_tuning_live/dataset.test.v1.jsonl"
+  }
+}

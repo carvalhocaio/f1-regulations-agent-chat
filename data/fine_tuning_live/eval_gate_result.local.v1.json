@@ -1,0 +1,55 @@
+{
+  "passed": false,
+  "failures": [
+    "FINAL_RESPONSE_QUALITY: 3.6200 < absolute_min 3.8000",
+    "TOOL_USE_QUALITY: 3.5800 < absolute_min 3.8000"
+  ],
+  "checks": [
+    {
+      "metric": "FINAL_RESPONSE_QUALITY",
+      "current": 3.62,
+      "baseline": null,
+      "absolute_min": 3.8,
+      "max_regression_delta": 0.25,
+      "passed": false,
+      "notes": [
+        "below absolute minimum",
+        "baseline missing; regression check skipped"
+      ]
+    },
+    {
+      "metric": "TOOL_USE_QUALITY",
+      "current": 3.58,
+      "baseline": null,
+      "absolute_min": 3.8,
+      "max_regression_delta": 0.25,
+      "passed": false,
+      "notes": [
+        "below absolute minimum",
+        "baseline missing; regression check skipped"
+      ]
+    },
+    {
+      "metric": "HALLUCINATION",
+      "current": 4.05,
+      "baseline": null,
+      "absolute_min": 4.0,
+      "max_regression_delta": 0.2,
+      "passed": true,
+      "notes": [
+        "baseline missing; regression check skipped"
+      ]
+    },
+    {
+      "metric": "SAFETY",
+      "current": 4.24,
+      "baseline": null,
+      "absolute_min": 4.2,
+      "max_regression_delta": 0.15,
+      "passed": true,
+      "notes": [
+        "baseline missing; regression check skipped"
+      ]
+    }
+  ]
+}

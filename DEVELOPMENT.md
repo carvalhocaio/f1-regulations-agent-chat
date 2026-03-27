@@ -97,7 +97,12 @@ Opens the ADK web UI at `http://localhost:8000`.
 | `F1_CODE_EXECUTION_AGENT_ENGINE_NAME` | No | — | Agent Engine resource used as parent for sandbox operations |
 | `F1_CODE_EXECUTION_SANDBOX_TTL_SECONDS` | No | `3600` | TTL for sandbox lifecycle in seconds |
 | `F1_CODE_EXECUTION_MAX_ROWS` | No | `500` | Max list size accepted by analytical payload validators |
+| `F1_TOOL_METRICS_EXPORT_ENABLED` | No | `false` | Export tool validation errors as custom Cloud Monitoring metric |
+| `F1_TOOL_METRICS_PROJECT_ID` | No | — | Project id used when exporting tool validation metrics (fallbacks: `GOOGLE_CLOUD_PROJECT`, `F1_RAG_PROJECT_ID`) |
 | `F1_VERTEX_LLM_REQUEST_TYPE` | No | `shared` | Vertex Gemini throughput route: `shared` (DSQ) or `dedicated` (Provisioned Throughput) |
+| `F1_GROUNDING_POLICY_ENABLED` | No | `true` | Enables grounding policy callback for factual-critical routes |
+| `F1_GROUNDING_POLICY_MODE` | No | `observe` | Grounding validation mode: `observe` (log only) or `enforce` (fallback on missing evidence) |
+| `F1_GROUNDING_TIME_SENSITIVE_SOURCE` | No | `google` | Source used for time-sensitive grounding policy (Phase 1 currently supports `google`) |
 | `F1_SEMANTIC_CACHE_SIMILARITY_THRESHOLD` | No | `0.92` | Minimum cosine similarity (via normalized inner product) for cache hit |
 | `F1_SEMANTIC_CACHE_TOP_K` | No | `8` | ANN candidate count per cache lookup |
 | `F1_SEMANTIC_CACHE_HNSW_M` | No | `32` | HNSW graph degree parameter |
@@ -378,6 +383,44 @@ echo -n "projects/<PROJECT_NUMBER>/locations/us-central1/endpoints/<ENDPOINT_ID>
 ```
 
 The deploy script (`deployment/deploy.py`) automatically reads the `f1-tuned-model` secret from Secret Manager and injects it as the `F1_TUNED_MODEL` environment variable in the Agent Engine runtime.
+
+### Continuous tuning loop (live dataset)
+
+Q5 introduces a live-dataset path to continuously improve tool use and response format quality.
+
+1. Curate failures from eval/runtime signals into a raw JSONL file (see schema in `data/fine_tuning_live/README.md`).
+2. (Optional automation) collect raw failures from eval artifacts:
+
+```bash
+uv run python deployment/collect_live_failures.py \
+  --eval-dataset-file data/evals/agent_regression.v1.jsonl \
+  --eval-report-file eval_report.json \
+  --eval-gate-result-file eval_gate_result.json \
+  --output-file data/fine_tuning_live/live_failures.raw.v1.jsonl
+```
+
+3. Build a versioned, redacted live dataset:
+
+```bash
+uv run python deployment/build_live_fine_tuning_dataset.py \
+  --failures-file data/fine_tuning_live/live_failures.raw.v1.jsonl \
+  --output-dir data/fine_tuning_live \
+  --version v1
+```
+
+4. Upload generated train/test files to GCS and launch tuning:
+
+```bash
+gsutil cp data/fine_tuning_live/dataset.train.v1.jsonl gs://<BUCKET>/fine_tuning/dataset.train.v1.jsonl
+gsutil cp data/fine_tuning_live/dataset.test.v1.jsonl gs://<BUCKET>/fine_tuning/dataset.test.v1.jsonl
+
+uv run python -m f1_agent.fine_tuning.tune \
+  --project <PROJECT_ID> \
+  --training-data gs://<BUCKET>/fine_tuning/dataset.train.v1.jsonl \
+  --validation-data gs://<BUCKET>/fine_tuning/dataset.test.v1.jsonl
+```
+
+Redaction is enabled by default in the builder and should remain enabled for regular operation.
 
 ### Fine-tuning files
 

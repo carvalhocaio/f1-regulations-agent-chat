@@ -4,17 +4,17 @@ from f1_agent.agent import root_agent
 
 
 class AgentToolContractTests(unittest.TestCase):
-    def test_instruction_uses_google_search_agent_name(self):
+    def test_instruction_uses_google_search_name(self):
         instruction = root_agent.static_instruction
 
-        self.assertIn("google_search_agent", instruction)
-        self.assertNotIn("**google_search**", instruction)
+        self.assertIn("google_search", instruction)
+        self.assertNotIn("google_search_agent", instruction)
 
-    def test_instruction_mentions_search_as_fallback(self):
+    def test_instruction_does_not_allow_search_alias(self):
         instruction = root_agent.static_instruction
 
-        self.assertIn("search", instruction)
-        self.assertIn("fallback", instruction.lower())
+        self.assertNotIn("`search`", instruction)
+        self.assertIn("NEVER invent tool names", instruction)
 
     def test_instruction_mentions_analytical_sandbox_tool(self):
         instruction = root_agent.static_instruction
@@ -43,8 +43,8 @@ class AgentToolContractTests(unittest.TestCase):
         self.assertIn("query_f1_history", tool_names)
         self.assertIn("query_f1_history_template", tool_names)
         self.assertIn("run_analytical_code", tool_names)
-        self.assertIn("search", tool_names)
         self.assertIn("google_search", tool_names)
+        self.assertNotIn("search", tool_names)
 
     def test_instruction_enforces_last_event_without_year_policy(self):
         instruction = root_agent.static_instruction
@@ -75,11 +75,37 @@ class AgentToolContractTests(unittest.TestCase):
             callback_names.index("inject_dynamic_examples"),
             callback_names.index("route_model"),
         )
+        self.assertLess(
+            callback_names.index("route_model"),
+            callback_names.index("apply_throughput_request_type"),
+        )
+        self.assertLess(
+            callback_names.index("apply_throughput_request_type"),
+            callback_names.index("apply_grounding_policy"),
+        )
+        self.assertLess(
+            callback_names.index("apply_grounding_policy"),
+            callback_names.index("apply_response_contract"),
+        )
+        self.assertLess(
+            callback_names.index("apply_response_contract"),
+            callback_names.index("preflight_token_check"),
+        )
 
     def test_after_model_callback_includes_memory_sync(self):
         callback_names = [cb.__name__ for cb in root_agent.after_model_callback]
 
+        self.assertIn("validate_structured_response", callback_names)
+        self.assertIn("validate_grounding_outcome", callback_names)
         self.assertIn("sync_memory_bank", callback_names)
+        self.assertLess(
+            callback_names.index("log_context_cache_metrics"),
+            callback_names.index("validate_structured_response"),
+        )
+        self.assertLess(
+            callback_names.index("validate_structured_response"),
+            callback_names.index("validate_grounding_outcome"),
+        )
         self.assertLess(
             callback_names.index("detect_corrections"),
             callback_names.index("sync_memory_bank"),

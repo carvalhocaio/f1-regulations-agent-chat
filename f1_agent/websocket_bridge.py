@@ -128,7 +128,7 @@ async def websocket_bidi_loop(
     """Serve interactive streaming turns over WebSocket.
 
     Client messages:
-    - ``{"type": "input", "input": "...", "user_id": "...", "session_id": "..."}``
+    - ``{"type": "input", "input": "...", "user_id": "...", "session_id": "...", "response_contract_id": "..."}``
     - ``{"type": "abort"}``
     - ``{"type": "ping"}``
     - ``{"type": "close"}``
@@ -160,13 +160,25 @@ async def websocket_bidi_loop(
         active = None
 
     async def _pump_turn(
-        *, request_id: str, user_id: str | None, session_id: str | None, text: str
+        *,
+        request_id: str,
+        user_id: str | None,
+        session_id: str | None,
+        text: str,
+        response_contract_id: str | None,
     ) -> None:
         try:
+            request_payload: dict[str, Any] = {
+                "input": text,
+                "user_id": user_id,
+            }
+            if response_contract_id:
+                request_payload["response_contract_id"] = response_contract_id
+
             async with connection_factory() as connection:
                 async for event in iter_bidi_turn_events(
                     connection=connection,
-                    request={"input": text, "user_id": user_id},
+                    request=request_payload,
                     request_id=request_id,
                     user_id=user_id,
                     session_id=session_id,
@@ -230,12 +242,19 @@ async def websocket_bidi_loop(
         request_id = str(message.get("request_id") or uuid4())
         user_id = message.get("user_id")
         session_id = message.get("session_id")
+        response_contract_id = message.get("response_contract_id")
         task = asyncio.create_task(
             _pump_turn(
                 request_id=request_id,
                 user_id=str(user_id) if user_id is not None else None,
                 session_id=str(session_id) if session_id is not None else None,
                 text=text,
+                response_contract_id=(
+                    str(response_contract_id)
+                    if isinstance(response_contract_id, str)
+                    and response_contract_id.strip()
+                    else None
+                ),
             )
         )
         active = _ActiveTurn(

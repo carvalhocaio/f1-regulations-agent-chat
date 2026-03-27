@@ -15,9 +15,8 @@ Built with [Google ADK](https://google.github.io/adk-docs/) and powered by Gemin
 - `search_regulations` — hybrid retrieval (FAISS semantic + BM25 keyword) over FIA 2026 Sections A-F
 - `query_f1_history_template` — pre-built SQL templates for common F1 queries (champions, career stats, records, standings, head-to-head)
 - `query_f1_history` — read-only SQL access to historical F1 data
-- `google_search_agent` — live web retrieval for current season/news
+- `google_search` — live web retrieval for current season/news
 - `run_analytical_code` — restricted Code Execution sandbox for advanced analytics (feature-flagged)
-- `search` (compatibility alias) — guided fallback if the model hallucinates a generic tool name
 
 **Intelligence layer:**
 - **Model routing** — simple queries go to Flash (or fine-tuned Flash), complex ones stay on Pro
@@ -29,6 +28,8 @@ Built with [Google ADK](https://google.github.io/adk-docs/) and powered by Gemin
 - **Code Execution sandbox (A6, restricted mode)** — allowlisted analytical templates for simulations/statistics (feature-flagged)
 - **RAG Engine rollout (A4)** — `search_regulations` supports phased routing (`auto|local|vertex`) with automatic fallback to local hybrid RAG
 - **Standardized resilience** — exponential backoff + jitter + circuit breaker for transient 429/503 failures in runtime/tools
+- **Strict tool contract** — no compatibility alias, stricter argument validation, and structured tool errors for invalid calls
+- **Tool validation telemetry** — per-tool/per-error counters in runtime logs (e.g. `tool_validation_error`)
 - **Runtime temporal context** — injects current UTC date/year on every request to avoid stale year assumptions after deploy
 - **Temporal reasoning** — automatically splits questions: `1950-2024` via SQLite, `2025+` via web search
 
@@ -62,7 +63,7 @@ ADK Agent (Gemini)
     |-- Free-form SQL ---------> query_f1_history(sql_query)
     |                             -> SQLite (1950-2024, SELECT only)
     |
-    |-- Current/live ----------> google_search_agent(request)
+    |-- Current/live ----------> google_search(request)
     |                             -> Web results
     |
     |-- Advanced analytics ----> run_analytical_code(task_type, payload)
@@ -105,6 +106,13 @@ Client -> server messages:
 - `{"type":"abort"}`
 - `{"type":"ping"}`
 - `{"type":"close"}`
+
+Optional structured response control (critical routes only):
+- include `"response_contract_id"` in `input` messages when machine-readable JSON is required
+- supported contract IDs:
+  - `sources_block_v1`
+  - `comparison_table_v1`
+- runtime validates JSON and schema after model generation; invalid payloads are replaced by contract-compatible fallback JSON and logged as `structured_response_validation`
 
 Server -> client events (`stream_protocol_version=v1`):
 - `turn_start`
@@ -181,6 +189,9 @@ GOOGLE_API_KEY=your-key-here
 
 # Optional (P6 throughput routing). Default is DSQ/pay-as-you-go.
 # F1_VERTEX_LLM_REQUEST_TYPE=shared  # shared|dedicated
+
+# Optional (Q3 structured outputs). Enabled by default.
+# F1_STRUCTURED_RESPONSE_ENABLED=true
 
 # Optional (P2 resilience defaults tuned for chat fail-fast).
 # F1_LLM_RETRY_ENABLED=true
@@ -313,7 +324,7 @@ The SQLite DB contains 14 tables with the following row counts:
 ## Deployment and CI/CD
 
 - **CI** (`.github/workflows/ci.yml`): Runs on PRs — ruff check, format check, unit tests
-- **Deploy** (`.github/workflows/deploy.yml`): Runs on push to `main` — downloads artifacts, deploys to Agent Engine
+- **Deploy** (`.github/workflows/deploy.yml`): Runs on push to `main` with 3 stages — deploy candidate, run Gen AI Evaluation gate (dataset + rubric metrics), then promote to production only when gate passes
 
 For complete production setup (GCP, Terraform, secrets, manual deploy, smoke test):
 - See [DEPLOY.md](./DEPLOY.md)

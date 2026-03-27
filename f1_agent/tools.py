@@ -2,12 +2,18 @@ import json
 import logging
 import os
 import re
+from collections import Counter
+from typing import Any
 
 from f1_agent import db
 from f1_agent.rag import hybrid_search
 from f1_agent.sql_templates import TEMPLATES, resolve_template
+from f1_agent.tool_metrics import emit_tool_validation_error_metric
 
 logger = logging.getLogger(__name__)
+
+_MAX_QUERY_LEN = 500
+_TOOL_VALIDATION_ERROR_COUNTER: Counter[str] = Counter()
 
 _RAG_BACKEND_ENV = "F1_RAG_BACKEND"
 _RAG_BACKEND_LOCAL = "local"
@@ -31,31 +37,44 @@ def search_regulations(query: str) -> dict:
     Args:
         query: The search query about F1 regulations.
     """
+    normalized_query = _normalize_non_empty_text(
+        value=query,
+        field_name="query",
+        max_len=_MAX_QUERY_LEN,
+    )
+    if normalized_query is None:
+        return _tool_error(
+            tool_name="search_regulations",
+            code="INVALID_ARGUMENT",
+            message="search_regulations requires non-empty string `query`.",
+            details={"field": "query", "expected": "non-empty string"},
+        )
+
     backend = _selected_rag_backend()
 
     if backend == _RAG_BACKEND_LOCAL:
-        results = _search_regulations_local(query, k=5)
+        results = _search_regulations_local(normalized_query, k=5)
     elif backend == _RAG_BACKEND_VERTEX:
-        results = _search_regulations_vertex(query, k=5)
+        results = _search_regulations_vertex(normalized_query, k=5)
         if not results:
             logger.warning(
                 "Vertex RAG returned no results; falling back to local search"
             )
-            results = _search_regulations_local(query, k=5)
+            results = _search_regulations_local(normalized_query, k=5)
     elif backend == _RAG_BACKEND_VECTOR_SEARCH:
-        results = _search_regulations_vector_search(query, k=5)
+        results = _search_regulations_vector_search(normalized_query, k=5)
         if not results:
             logger.warning(
                 "Vector Search returned no results; falling back to local search"
             )
-            results = _search_regulations_local(query, k=5)
+            results = _search_regulations_local(normalized_query, k=5)
     else:
         for candidate in (
             _search_regulations_vector_search,
             _search_regulations_vertex,
             _search_regulations_local,
         ):
-            results = candidate(query, k=5)
+            results = candidate(normalized_query, k=5)
             if results:
                 break
 
@@ -118,46 +137,6 @@ def _search_regulations_vector_search(query: str, k: int = 5):
         return []
 
 
-def search(query: str | None = None, request: str | None = None) -> dict:
-    """Compatibility fallback for hallucinated `search` tool calls.
-
-    This tool exists only to avoid runtime failures when the model tries to call
-    `search` (generic name) instead of one of the explicit tools.
-    """
-    normalized_query = (query or request or "").strip()
-    valid_tools = [
-        "search_regulations",
-        "query_f1_history",
-        "google_search_agent",
-        "run_analytical_code",
-    ]
-
-    if not normalized_query:
-        return {
-            "status": "invalid_tool_alias",
-            "message": (
-                "Tool `search` is not a valid data source. Retry with one of the"
-                " valid tools: search_regulations(query),"
-                " query_f1_history(sql_query), or"
-                " google_search_agent(request), or"
-                " run_analytical_code(task_type, payload)."
-            ),
-            "valid_tools": valid_tools,
-        }
-
-    return {
-        "status": "invalid_tool_alias",
-        "message": (
-            "Tool `search` is a compatibility alias only. Retry immediately with"
-            " exactly one valid tool: search_regulations(query),"
-            " query_f1_history(sql_query), google_search_agent(request),"
-            " or run_analytical_code(task_type, payload)."
-        ),
-        "valid_tools": valid_tools,
-        "suggested_query": normalized_query,
-    }
-
-
 def query_f1_history_template(template_name: str, params: str = "{}") -> dict:
     """Execute a pre-built SQL template against the F1 historical database.
 
@@ -203,24 +182,86 @@ def query_f1_history_template(template_name: str, params: str = "{}") -> dict:
         params: JSON string with template parameters,
                 e.g. '{"year": 2023, "country": "Brazil"}'.
     """
-    try:
-        parsed_params = json.loads(params) if params else {}
-    except json.JSONDecodeError as e:
-        return {"status": "error", "message": f"Invalid JSON in params: {e}"}
+    normalized_template_name = _normalize_non_empty_text(
+        value=template_name,
+        field_name="template_name",
+        max_len=120,
+    )
+    if normalized_template_name is None:
+        return _tool_error(
+            tool_name="query_f1_history_template",
+            code="INVALID_ARGUMENT",
+            message="query_f1_history_template requires `template_name`.",
+            details={"field": "template_name", "expected": "non-empty string"},
+        )
 
     try:
-        sql = resolve_template(template_name, **parsed_params)
-    except (KeyError, ValueError) as e:
-        return {
-            "status": "error",
-            "message": str(e),
-            "available_templates": list(TEMPLATES.keys()),
-        }
+        parsed_params = json.loads(params) if params else {}
+    except json.JSONDecodeError as exc:
+        return _tool_error(
+            tool_name="query_f1_history_template",
+            code="INVALID_ARGUMENT",
+            message=f"Invalid JSON in `params`: {exc}",
+            details={"field": "params", "expected": "JSON object string"},
+        )
+
+    if not isinstance(parsed_params, dict):
+        return _tool_error(
+            tool_name="query_f1_history_template",
+            code="INVALID_ARGUMENT",
+            message="`params` must be a JSON object.",
+            details={"field": "params", "expected": "JSON object"},
+        )
+
+    template_spec = TEMPLATES.get(normalized_template_name)
+    if template_spec is None:
+        return _tool_error(
+            tool_name="query_f1_history_template",
+            code="INVALID_TEMPLATE",
+            message=(
+                f"Unknown template '{normalized_template_name}'."
+                f" Valid templates: {', '.join(TEMPLATES.keys())}"
+            ),
+            details={"available_templates": sorted(TEMPLATES.keys())},
+        )
+
+    allowed_param_keys = set(template_spec.get("params", {}).keys())
+    unknown_param_keys = sorted(
+        k for k in parsed_params.keys() if k not in allowed_param_keys
+    )
+    if unknown_param_keys:
+        return _tool_error(
+            tool_name="query_f1_history_template",
+            code="INVALID_ARGUMENT",
+            message=(
+                "Unknown parameter(s) for template "
+                f"'{normalized_template_name}': {', '.join(unknown_param_keys)}"
+            ),
+            details={
+                "field": "params",
+                "unknown_keys": unknown_param_keys,
+                "allowed_keys": sorted(allowed_param_keys),
+            },
+        )
+
+    try:
+        sql = resolve_template(normalized_template_name, **parsed_params)
+    except (KeyError, TypeError, ValueError) as exc:
+        return _tool_error(
+            tool_name="query_f1_history_template",
+            code="INVALID_ARGUMENT",
+            message=str(exc),
+            details={"available_templates": sorted(TEMPLATES.keys())},
+        )
 
     try:
         results = db.execute_query(sql)
-    except Exception as e:
-        return {"status": "error", "message": f"SQL error: {e}"}
+    except Exception as exc:
+        return _tool_error(
+            tool_name="query_f1_history_template",
+            code="SQL_EXECUTION_ERROR",
+            message=f"SQL error: {exc}",
+        )
 
     if not results:
         return {
@@ -313,24 +354,49 @@ def query_f1_history(sql_query: str) -> dict:
     Args:
         sql_query: A SQLite SELECT query to execute against the F1 historical database.
     """
+    stripped = _normalize_non_empty_text(
+        value=sql_query,
+        field_name="sql_query",
+        max_len=6000,
+    )
+    if stripped is None:
+        return _tool_error(
+            tool_name="query_f1_history",
+            code="INVALID_ARGUMENT",
+            message="query_f1_history requires non-empty string `sql_query`.",
+            details={"field": "sql_query", "expected": "non-empty string"},
+        )
+
     # Validate query is read-only
-    stripped = sql_query.strip()
     if _FORBIDDEN_RE.match(stripped):
-        return {
-            "status": "error",
-            "message": "Only SELECT queries are allowed. Write operations are not permitted.",
-        }
+        return _tool_error(
+            tool_name="query_f1_history",
+            code="READ_ONLY_ENFORCED",
+            message="Only SELECT queries are allowed. Write operations are not permitted.",
+        )
 
     if not stripped.upper().startswith("SELECT"):
-        return {
-            "status": "error",
-            "message": "Query must start with SELECT.",
-        }
+        return _tool_error(
+            tool_name="query_f1_history",
+            code="INVALID_QUERY",
+            message="Query must start with SELECT.",
+        )
+
+    if ";" in stripped.rstrip(";"):
+        return _tool_error(
+            tool_name="query_f1_history",
+            code="INVALID_QUERY",
+            message="Multiple SQL statements are not allowed.",
+        )
 
     try:
-        results = db.execute_query(sql_query)
-    except Exception as e:
-        return {"status": "error", "message": f"SQL error: {e}"}
+        results = db.execute_query(stripped)
+    except Exception as exc:
+        return _tool_error(
+            tool_name="query_f1_history",
+            code="SQL_EXECUTION_ERROR",
+            message=f"SQL error: {exc}",
+        )
 
     if not results:
         return {
@@ -348,3 +414,52 @@ def query_f1_history(sql_query: str) -> dict:
         "row_count": len(results),
         "truncated": truncated,
     }
+
+
+def get_tool_validation_error_counters() -> dict[str, int]:
+    """Return a snapshot of validation error counters by tool/code."""
+    return dict(_TOOL_VALIDATION_ERROR_COUNTER)
+
+
+def _normalize_non_empty_text(
+    *, value: object, field_name: str, max_len: int
+) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if len(normalized) > max_len:
+        logger.warning(
+            "Truncating %s from %d to %d chars", field_name, len(normalized), max_len
+        )
+        normalized = normalized[:max_len]
+    return normalized
+
+
+def _tool_error(
+    *,
+    tool_name: str,
+    code: str,
+    message: str,
+    details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    counter_key = f"{tool_name}:{code}"
+    _TOOL_VALIDATION_ERROR_COUNTER[counter_key] += 1
+    logger.warning(
+        "tool_validation_error | tool=%s code=%s count=%d message=%s",
+        tool_name,
+        code,
+        _TOOL_VALIDATION_ERROR_COUNTER[counter_key],
+        message,
+    )
+    emit_tool_validation_error_metric(tool_name=tool_name, error_code=code)
+
+    payload: dict[str, Any] = {
+        "status": "error",
+        "message": message,
+        "error": {"tool_name": tool_name, "code": code, "message": message},
+    }
+    if details:
+        payload["error"]["details"] = details
+    return payload

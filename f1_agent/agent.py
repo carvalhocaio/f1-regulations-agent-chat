@@ -10,6 +10,8 @@ from google.adk.tools.google_search_tool import GoogleSearchTool
 from google.genai import types
 
 from f1_agent.callbacks import (
+    apply_grounding_policy,
+    apply_response_contract,
     apply_throughput_request_type,
     check_cache,
     detect_corrections,
@@ -22,6 +24,8 @@ from f1_agent.callbacks import (
     route_model,
     store_cache,
     sync_memory_bank,
+    validate_grounding_outcome,
+    validate_structured_response,
 )
 from f1_agent.code_execution import run_analytical_code
 from f1_agent.env_utils import env_bool, env_float, env_int
@@ -29,7 +33,6 @@ from f1_agent.resilience import is_quota_or_unavailable_error
 from f1_agent.tools import (
     query_f1_history,
     query_f1_history_template,
-    search,
     search_regulations,
 )
 
@@ -144,7 +147,6 @@ root_agent = Agent(
         query_f1_history_template,
         query_f1_history,
         run_analytical_code,
-        search,
         google_search,
     ],
     before_model_callback=[
@@ -155,10 +157,14 @@ root_agent = Agent(
         inject_dynamic_examples,
         route_model,
         apply_throughput_request_type,
+        apply_grounding_policy,
+        apply_response_contract,
         preflight_token_check,
     ],
     after_model_callback=[
         log_context_cache_metrics,
+        validate_structured_response,
+        validate_grounding_outcome,
         detect_corrections,
         sync_memory_bank,
         store_cache,

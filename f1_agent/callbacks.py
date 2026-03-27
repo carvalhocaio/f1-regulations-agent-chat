@@ -15,6 +15,7 @@ ADK callbacks for model routing, semantic caching, and session corrections.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -32,6 +33,13 @@ from f1_agent.memory_bank import (
 from f1_agent.memory_bank import (
     load_settings as load_memory_bank_settings,
 )
+from f1_agent.response_contract import (
+    CONTRACT_ID_COMPARISON_TABLE_V1,
+    CONTRACT_ID_SOURCES_BLOCK_V1,
+    get_response_contract,
+    list_response_contract_ids,
+    validate_contract_payload,
+)
 from f1_agent.token_preflight import check_and_truncate as _check_and_truncate
 
 logger = logging.getLogger(__name__)
@@ -39,6 +47,25 @@ logger = logging.getLogger(__name__)
 _DB_MAX_YEAR = 2024
 _DEFAULT_VERTEX_REQUEST_TYPE = "shared"
 _VALID_VERTEX_REQUEST_TYPES = {"shared", "dedicated"}
+_STRUCTURED_RESPONSE_ENABLED_ENV = "F1_STRUCTURED_RESPONSE_ENABLED"
+_RESPONSE_CONTRACT_STATE_KEYS = (
+    "response_contract_id",
+    "f1_response_contract_id",
+)
+_ACTIVE_RESPONSE_CONTRACT_KEY = "f1_active_response_contract_id"
+_STRUCTURED_RESPONSE_VALIDATION_COUNTERS: dict[str, int] = {}
+_GROUNDING_POLICY_ENABLED_ENV = "F1_GROUNDING_POLICY_ENABLED"
+_GROUNDING_POLICY_MODE_ENV = "F1_GROUNDING_POLICY_MODE"
+_GROUNDING_TIME_SENSITIVE_SOURCE_ENV = "F1_GROUNDING_TIME_SENSITIVE_SOURCE"
+_DEFAULT_GROUNDING_POLICY_MODE = "observe"
+_VALID_GROUNDING_POLICY_MODES = {"observe", "enforce"}
+_DEFAULT_GROUNDING_TIME_SENSITIVE_SOURCE = "google"
+_VALID_GROUNDING_TIME_SENSITIVE_SOURCES = {"google"}
+_GROUNDING_POLICY_STATE_KEY = "f1_grounding_policy"
+_GROUNDING_REQUIRED_STATE_KEY = "f1_grounding_required"
+_GROUNDING_SOURCE_STATE_KEY = "f1_grounding_source"
+_AUTO_GROUNDING_CONTRACT_STATE_KEY = "f1_auto_grounding_contract"
+_GROUNDING_VALIDATION_COUNTERS: dict[str, int] = {}
 
 
 def _prepend_user_context(llm_request, text: str) -> None:
@@ -216,13 +243,13 @@ def _runtime_temporal_addendum() -> str:
         " are FINISHED, HISTORICAL seasons.\n"
         "- Historical DB coverage: 1950-2024 only.\n"
         f"- For data from 2025 through {last_completed}:"
-        " use google_search_agent.\n"
+        " use google_search.\n"
         f"- For data from {current_year} (ongoing season):"
-        " use google_search_agent.\n"
+        " use google_search.\n"
         "- CRITICAL: Your training data may be outdated. If your training"
         f" data says '{last_completed} season hasn't concluded' or similar,"
         f" THAT IS WRONG. Trust THIS instruction: the {last_completed}"
-        " season is over. When google_search_agent returns results about"
+        " season is over. When google_search returns results about"
         " post-2024 seasons, TRUST and REPORT those results."
         " Do NOT contradict them with your training knowledge.\n"
         "- Do not describe completed seasons as future or ongoing events."
@@ -288,8 +315,7 @@ def _resolve_temporal_references(user_text: str) -> str | None:
         )
         if last_completed > _DB_MAX_YEAR:
             tool_hints.append(
-                f"- Year {last_completed} is NOT in the database"
-                " → use google_search_agent"
+                f"- Year {last_completed} is NOT in the database -> use google_search"
             )
         else:
             tool_hints.append(
@@ -312,13 +338,11 @@ def _resolve_temporal_references(user_text: str) -> str | None:
             tool_hints.append(
                 f"- DB (query_f1_history_template): {db_years[0]}-{db_years[-1]}"
             )
-            tool_hints.append(
-                f"- Web (google_search_agent): {web_years[0]}-{web_years[-1]}"
-            )
+            tool_hints.append(f"- Web (google_search): {web_years[0]}-{web_years[-1]}")
             tool_hints.append("- Combine BOTH into a single unified answer")
         elif web_years:
             tool_hints.append(
-                f"- All years ({web_years[0]}-{web_years[-1]}) need google_search_agent"
+                f"- All years ({web_years[0]}-{web_years[-1]}) need google_search"
             )
         elif db_years:
             tool_hints.append(
@@ -332,12 +356,12 @@ def _resolve_temporal_references(user_text: str) -> str | None:
             f" (season COMPLETED)"
         )
         if last_completed > _DB_MAX_YEAR:
-            tool_hints.append(f"- {last_completed} champion: use google_search_agent")
+            tool_hints.append(f"- {last_completed} champion: use google_search")
 
     # "esta temporada" / "this season"
     if _THIS_SEASON_RE.search(user_text):
         resolutions.append(f"- 'This/current season' = {current_year} (may be ongoing)")
-        tool_hints.append(f"- {current_year} season: use google_search_agent")
+        tool_hints.append(f"- {current_year} season: use google_search")
 
     if _LAST_EVENT_RE.search(user_text) and not _YEAR_RE.search(user_text):
         resolutions.append(
@@ -349,8 +373,7 @@ def _resolve_temporal_references(user_text: str) -> str | None:
             " depending on event date"
         )
         tool_hints.append(
-            "- Use google_search_agent and return the event DATE and YEAR"
-            " to prove recency"
+            "- Use google_search and return the event DATE and YEAR to prove recency"
         )
         tool_hints.append(
             "- Never claim a season/event before current year is still in the future"
@@ -361,8 +384,7 @@ def _resolve_temporal_references(user_text: str) -> str | None:
             f"- Missing year + 'next event' wording = next scheduled event in {current_year}"
         )
         tool_hints.append(
-            "- Use google_search_agent for the current-year calendar and return"
-            " event date"
+            "- Use google_search for the current-year calendar and return event date"
         )
 
     if _CURRENT_STANDINGS_RE.search(user_text):
@@ -370,7 +392,7 @@ def _resolve_temporal_references(user_text: str) -> str | None:
             f"- Standings/leader request without explicit year defaults to {current_year}"
         )
         tool_hints.append(
-            "- Use google_search_agent and verify if at least one race in the current"
+            "- Use google_search and verify if at least one race in the current"
             " season has already happened"
         )
         if current_date.month <= 2:
@@ -447,6 +469,411 @@ def apply_throughput_request_type(callback_context, llm_request):
     logger.info(
         "throughput_route | request_type=%s model=%s", request_type, llm_request.model
     )
+    return None
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_grounding_policy_mode() -> str:
+    raw = os.environ.get(_GROUNDING_POLICY_MODE_ENV, _DEFAULT_GROUNDING_POLICY_MODE)
+    value = str(raw).strip().lower()
+    if value in _VALID_GROUNDING_POLICY_MODES:
+        return value
+    logger.warning(
+        "Invalid %s=%r; falling back to %s",
+        _GROUNDING_POLICY_MODE_ENV,
+        raw,
+        _DEFAULT_GROUNDING_POLICY_MODE,
+    )
+    return _DEFAULT_GROUNDING_POLICY_MODE
+
+
+def _resolve_time_sensitive_grounding_source() -> str:
+    raw = os.environ.get(
+        _GROUNDING_TIME_SENSITIVE_SOURCE_ENV, _DEFAULT_GROUNDING_TIME_SENSITIVE_SOURCE
+    )
+    value = str(raw).strip().lower()
+    if value in _VALID_GROUNDING_TIME_SENSITIVE_SOURCES:
+        return value
+    logger.warning(
+        "Invalid %s=%r; falling back to %s",
+        _GROUNDING_TIME_SENSITIVE_SOURCE_ENV,
+        raw,
+        _DEFAULT_GROUNDING_TIME_SENSITIVE_SOURCE,
+    )
+    return _DEFAULT_GROUNDING_TIME_SENSITIVE_SOURCE
+
+
+def _bump_grounding_validation_counter(policy: str, outcome: str) -> None:
+    key = f"{policy}:{outcome}"
+    _GROUNDING_VALIDATION_COUNTERS[key] = _GROUNDING_VALIDATION_COUNTERS.get(key, 0) + 1
+
+
+def get_grounding_validation_counters() -> dict[str, int]:
+    """Return a snapshot of grounding validation counters."""
+    return dict(_GROUNDING_VALIDATION_COUNTERS)
+
+
+def apply_grounding_policy(callback_context, llm_request):
+    """Before-model callback: apply grounding policy for factual-critical routes.
+
+    Phase 1 policy (recommended): enforce Google Search grounding for time-sensitive
+    questions ("now/current/latest/live", post-2024 ranges, recency requests).
+    """
+    if not _env_bool(_GROUNDING_POLICY_ENABLED_ENV, True):
+        return None
+
+    user_text = _extract_user_text(callback_context, llm_request)
+    if not user_text:
+        return None
+
+    state = getattr(callback_context, "state", None)
+    requires_grounding = _query_requires_web_data(user_text)
+    policy = "time_sensitive_public" if requires_grounding else "non_critical"
+    source = (
+        _resolve_time_sensitive_grounding_source() if requires_grounding else "none"
+    )
+
+    if isinstance(state, dict):
+        state[_GROUNDING_POLICY_STATE_KEY] = policy
+        state[_GROUNDING_REQUIRED_STATE_KEY] = requires_grounding
+        state[_GROUNDING_SOURCE_STATE_KEY] = source
+
+    if not requires_grounding:
+        if (
+            isinstance(state, dict)
+            and state.get(_AUTO_GROUNDING_CONTRACT_STATE_KEY)
+            and state.get("f1_response_contract_id") == CONTRACT_ID_SOURCES_BLOCK_V1
+        ):
+            state.pop("f1_response_contract_id", None)
+            state.pop(_AUTO_GROUNDING_CONTRACT_STATE_KEY, None)
+        return None
+
+    addendum = (
+        "## Grounding policy (factual-critical route)\n"
+        "This request is time-sensitive/current-state. You MUST ground claims with "
+        "fresh web evidence using google_search before finalizing the answer.\n"
+        "Requirements:\n"
+        "- Do not answer from stale memory for current-state facts.\n"
+        "- Include at least one web source with URL in the final response.\n"
+        "- If grounding evidence is insufficient, say you could not verify confidently "
+        "and ask for clarification."
+    )
+    _prepend_user_context(llm_request, addendum)
+
+    if isinstance(state, dict) and not _extract_response_contract_id(callback_context):
+        state["f1_response_contract_id"] = CONTRACT_ID_SOURCES_BLOCK_V1
+        state[_AUTO_GROUNDING_CONTRACT_STATE_KEY] = True
+
+    logger.info(
+        "grounding_policy | policy=%s required=%s source=%s",
+        policy,
+        requires_grounding,
+        source,
+    )
+    return None
+
+
+def _extract_response_contract_id(callback_context) -> str | None:
+    state = getattr(callback_context, "state", None)
+    if isinstance(state, dict):
+        for key in _RESPONSE_CONTRACT_STATE_KEYS:
+            value = state.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    invocation_context = getattr(callback_context, "invocation_context", None)
+    for key in _RESPONSE_CONTRACT_STATE_KEYS:
+        value = getattr(invocation_context, key, None)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    metadata = getattr(invocation_context, "metadata", None)
+    if isinstance(metadata, dict):
+        for key in _RESPONSE_CONTRACT_STATE_KEYS:
+            value = metadata.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    for attr in ("request", "request_payload", "payload"):
+        payload = getattr(invocation_context, attr, None)
+        if isinstance(payload, dict):
+            for key in _RESPONSE_CONTRACT_STATE_KEYS:
+                value = payload.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+
+    return None
+
+
+def apply_response_contract(callback_context, llm_request):
+    """Before-model callback: apply strict response schema for critical routes."""
+    state = getattr(callback_context, "state", None)
+    if not _env_bool(_STRUCTURED_RESPONSE_ENABLED_ENV, True):
+        if isinstance(state, dict):
+            state.pop(_ACTIVE_RESPONSE_CONTRACT_KEY, None)
+        return None
+
+    contract_id = _extract_response_contract_id(callback_context)
+    if not contract_id:
+        if isinstance(state, dict):
+            state.pop(_ACTIVE_RESPONSE_CONTRACT_KEY, None)
+        return None
+
+    contract = get_response_contract(contract_id)
+    if not contract:
+        logger.warning(
+            "structured_response | unknown_contract_id=%s supported=%s",
+            contract_id,
+            ",".join(list_response_contract_ids()),
+        )
+        if isinstance(state, dict):
+            state.pop(_ACTIVE_RESPONSE_CONTRACT_KEY, None)
+        return None
+
+    if not llm_request.config:
+        llm_request.config = types.GenerateContentConfig()
+
+    llm_request.config.response_mime_type = contract.response_mime_type
+    llm_request.config.response_schema = contract.response_schema
+    if isinstance(state, dict):
+        state[_ACTIVE_RESPONSE_CONTRACT_KEY] = contract_id
+
+    logger.info("structured_response | contract_id=%s", contract_id)
+    return None
+
+
+def get_structured_response_validation_counters() -> dict[str, int]:
+    """Return a snapshot of structured response validation counters."""
+    return dict(_STRUCTURED_RESPONSE_VALIDATION_COUNTERS)
+
+
+def _bump_structured_response_counter(contract_id: str, outcome: str) -> None:
+    key = f"{contract_id}:{outcome}"
+    _STRUCTURED_RESPONSE_VALIDATION_COUNTERS[key] = (
+        _STRUCTURED_RESPONSE_VALIDATION_COUNTERS.get(key, 0) + 1
+    )
+
+
+def _extract_response_text(llm_response) -> str:
+    if not llm_response or not llm_response.content or not llm_response.content.parts:
+        return ""
+    texts = [part.text for part in llm_response.content.parts if part.text]
+    return "\n".join(texts).strip()
+
+
+def _build_structured_fallback_payload(
+    contract_id: str, raw_text: str, reason: str
+) -> dict[str, object]:
+    fallback_excerpt = (raw_text or "").strip()
+    if len(fallback_excerpt) > 500:
+        fallback_excerpt = fallback_excerpt[:500]
+
+    if contract_id == CONTRACT_ID_SOURCES_BLOCK_V1:
+        return {
+            "schema_version": "v1",
+            "answer": fallback_excerpt
+            or "Structured output fallback applied due to response validation failure.",
+            "sources": [],
+        }
+
+    if contract_id == CONTRACT_ID_COMPARISON_TABLE_V1:
+        note_text = reason
+        if fallback_excerpt:
+            note_text = f"{reason}: {fallback_excerpt}"
+        return {
+            "schema_version": "v1",
+            "title": "Structured output fallback",
+            "columns": ["note"],
+            "rows": [[note_text]],
+            "notes": ["Generated fallback payload to keep parser compatibility."],
+        }
+
+    return {
+        "schema_version": "v1",
+        "message": "Structured output fallback applied.",
+        "reason": reason,
+    }
+
+
+def _get_active_response_contract_id(callback_context) -> str | None:
+    state = getattr(callback_context, "state", None)
+    if isinstance(state, dict):
+        value = state.get(_ACTIVE_RESPONSE_CONTRACT_KEY)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return _extract_response_contract_id(callback_context)
+
+
+def validate_structured_response(callback_context, llm_response):
+    """After-model callback: validate/enforce structured response payloads."""
+    if not _env_bool(_STRUCTURED_RESPONSE_ENABLED_ENV, True):
+        return None
+
+    contract_id = _get_active_response_contract_id(callback_context)
+    if not contract_id:
+        return None
+
+    state = getattr(callback_context, "state", None)
+    if isinstance(state, dict):
+        state.pop(_ACTIVE_RESPONSE_CONTRACT_KEY, None)
+
+    response_text = _extract_response_text(llm_response)
+    if not response_text:
+        reason = "empty_response_text"
+        fallback_payload = _build_structured_fallback_payload(contract_id, "", reason)
+        _bump_structured_response_counter(contract_id, "parse_failure")
+        if llm_response and llm_response.content:
+            llm_response.content.parts = [
+                types.Part(text=json.dumps(fallback_payload, ensure_ascii=True))
+            ]
+        logger.warning(
+            "structured_response_validation | contract_id=%s outcome=parse_failure reason=%s",
+            contract_id,
+            reason,
+        )
+        return None
+
+    try:
+        parsed_payload = json.loads(response_text)
+    except json.JSONDecodeError:
+        reason = "invalid_json"
+        fallback_payload = _build_structured_fallback_payload(
+            contract_id, response_text, reason
+        )
+        _bump_structured_response_counter(contract_id, "parse_failure")
+        if llm_response and llm_response.content:
+            llm_response.content.parts = [
+                types.Part(text=json.dumps(fallback_payload, ensure_ascii=True))
+            ]
+        logger.warning(
+            "structured_response_validation | contract_id=%s outcome=parse_failure reason=%s",
+            contract_id,
+            reason,
+        )
+        return None
+
+    is_valid, error = validate_contract_payload(contract_id, parsed_payload)
+    if is_valid:
+        _bump_structured_response_counter(contract_id, "success")
+        logger.info(
+            "structured_response_validation | contract_id=%s outcome=success",
+            contract_id,
+        )
+        return None
+
+    fallback_payload = _build_structured_fallback_payload(
+        contract_id,
+        response_text,
+        error or "schema_validation_error",
+    )
+    _bump_structured_response_counter(contract_id, "schema_failure")
+    if llm_response and llm_response.content:
+        llm_response.content.parts = [
+            types.Part(text=json.dumps(fallback_payload, ensure_ascii=True))
+        ]
+    logger.warning(
+        "structured_response_validation | contract_id=%s outcome=schema_failure error=%s",
+        contract_id,
+        error,
+    )
+    return None
+
+
+def _response_contains_grounding_metadata(llm_response) -> bool:
+    if not llm_response:
+        return False
+
+    candidates = getattr(llm_response, "candidates", None)
+    if isinstance(candidates, list):
+        for candidate in candidates:
+            if getattr(candidate, "grounding_metadata", None) is not None:
+                return True
+
+    grounding_metadata = getattr(llm_response, "grounding_metadata", None)
+    return grounding_metadata is not None
+
+
+def _extract_web_sources_count_from_response_text(response_text: str) -> int:
+    if not response_text:
+        return 0
+
+    try:
+        payload = json.loads(response_text)
+    except json.JSONDecodeError:
+        return 0
+
+    if not isinstance(payload, dict):
+        return 0
+
+    sources = payload.get("sources")
+    if not isinstance(sources, list):
+        return 0
+
+    return sum(
+        1
+        for source in sources
+        if isinstance(source, dict) and source.get("source_type") == "web"
+    )
+
+
+def validate_grounding_outcome(callback_context, llm_response):
+    """After-model callback: verify grounding evidence for critical routes."""
+    if not _env_bool(_GROUNDING_POLICY_ENABLED_ENV, True):
+        return None
+
+    state = getattr(callback_context, "state", None)
+    required = False
+    policy = "unknown"
+    source = "unknown"
+    if isinstance(state, dict):
+        required = bool(state.get(_GROUNDING_REQUIRED_STATE_KEY, False))
+        policy = str(state.get(_GROUNDING_POLICY_STATE_KEY, "unknown"))
+        source = str(state.get(_GROUNDING_SOURCE_STATE_KEY, "unknown"))
+
+    if not required:
+        return None
+
+    response_text = _extract_response_text(llm_response)
+    web_sources_count = _extract_web_sources_count_from_response_text(response_text)
+    metadata_present = _response_contains_grounding_metadata(llm_response)
+    grounded = web_sources_count > 0 or metadata_present
+    mode = _resolve_grounding_policy_mode()
+    outcome = "success" if grounded else "missing"
+    _bump_grounding_validation_counter(policy, outcome)
+
+    logger.info(
+        "grounding_validation | policy=%s required=%s source=%s outcome=%s "
+        "web_sources=%d metadata_present=%s mode=%s",
+        policy,
+        required,
+        source,
+        outcome,
+        web_sources_count,
+        metadata_present,
+        mode,
+    )
+
+    if grounded or mode != "enforce":
+        return None
+
+    fallback_payload = {
+        "schema_version": "v1",
+        "answer": (
+            "I could not confidently verify this time-sensitive answer with fresh "
+            "grounded web evidence in this attempt. Please retry or refine the query."
+        ),
+        "sources": [],
+    }
+    if llm_response and llm_response.content:
+        llm_response.content.parts = [
+            types.Part(text=json.dumps(fallback_payload, ensure_ascii=True))
+        ]
     return None
 
 

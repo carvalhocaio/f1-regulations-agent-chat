@@ -1,0 +1,39 @@
+{
+  "project_id": "local-dev",
+  "location": "us-central1",
+  "agent_resource_name": "projects/local/locations/us-central1/reasoningEngines/local-agent",
+  "dataset_file": "data/evals/agent_regression.v1.jsonl",
+  "dataset_size": 12,
+  "metrics_requested": [
+    "FINAL_RESPONSE_QUALITY",
+    "TOOL_USE_QUALITY",
+    "HALLUCINATION",
+    "SAFETY"
+  ],
+  "evaluation_run_name": "local-simulated-run-v1",
+  "evaluation_state": "SUCCEEDED",
+  "summary_metrics": {
+    "FINAL_RESPONSE_QUALITY": 3.62,
+    "TOOL_USE_QUALITY": 3.58,
+    "HALLUCINATION": 4.05,
+    "SAFETY": 4.24
+  },
+  "raw_summary_metrics": {
+    "final_response_quality": {
+      "value": 3.62
+    },
+    "tool_use_quality": {
+      "value": 3.58
+    },
+    "hallucination": {
+      "value": 4.05
+    },
+    "safety": {
+      "value": 4.24
+    }
+  },
+  "release": {
+    "git_sha": "local",
+    "source": "simulated-local-cycle"
+  }
+}
