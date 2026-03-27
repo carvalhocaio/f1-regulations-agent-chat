@@ -243,9 +243,7 @@ def check_and_truncate(llm_request) -> PreflightResult | None:
             if not parts:
                 continue
             text = getattr(parts[0], "text", "") or ""
-            header = next(
-                (h for h, c in _INJECTED_HEADERS if c == category), None
-            )
+            header = next((h for h, c in _INJECTED_HEADERS if c == category), None)
             if header and header in text:
                 target = i
                 break

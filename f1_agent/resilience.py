@@ -315,5 +315,3 @@ def _get_breaker(
         )
         _breaker_registry[operation] = breaker
         return breaker
-
-

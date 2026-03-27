@@ -111,7 +111,6 @@ def build_agent_connection_factory(
     return _fallback_factory
 
 
-
 @dataclass
 class _ActiveTurn:
     request_id: str

@@ -1,7 +1,6 @@
 """Tests for the token preflight check module."""
 
 import unittest
-from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
 from f1_agent.token_preflight import (
@@ -9,7 +8,6 @@ from f1_agent.token_preflight import (
     _identify_injected_blocks,
     check_and_truncate,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fakes (same pattern as test_model_routing.py)
@@ -49,8 +47,7 @@ def _make_request_with_injected_blocks():
         ),
         _FakeContent(
             "user",
-            "## User corrections from this session\n"
-            "- correction 1",
+            "## User corrections from this session\n- correction 1",
         ),
         _FakeContent(
             "user",
@@ -78,10 +75,12 @@ class TestIdentifyInjectedBlocks(unittest.TestCase):
         )
 
     def test_no_injected_blocks(self):
-        req = _FakeRequest(contents=[
-            _FakeContent("user", "Who won in 2023?"),
-            _FakeContent("model", "Verstappen."),
-        ])
+        req = _FakeRequest(
+            contents=[
+                _FakeContent("user", "Who won in 2023?"),
+                _FakeContent("model", "Verstappen."),
+            ]
+        )
         blocks = _identify_injected_blocks(req.contents)
         self.assertEqual(blocks, [])
 
@@ -191,9 +190,7 @@ class TestProgressiveTruncation(unittest.TestCase):
         self.assertEqual(result.final_tokens, 8000)
         # Verify examples block was removed
         texts = [p.parts[0].text for p in req.contents if p.role == "user"]
-        self.assertFalse(
-            any("Dynamic few-shot examples" in t for t in texts)
-        )
+        self.assertFalse(any("Dynamic few-shot examples" in t for t in texts))
 
     @patch.dict(
         "os.environ",
@@ -260,10 +257,12 @@ class TestNoBlocksToRemove(unittest.TestCase):
     )
     @patch("f1_agent.token_preflight.count_request_tokens", return_value=5000)
     def test_conversation_not_touched(self, mock_count):
-        req = _FakeRequest(contents=[
-            _FakeContent("user", "Who won in 2023?"),
-            _FakeContent("model", "Verstappen."),
-        ])
+        req = _FakeRequest(
+            contents=[
+                _FakeContent("user", "Who won in 2023?"),
+                _FakeContent("model", "Verstappen."),
+            ]
+        )
 
         result = check_and_truncate(req)
 
