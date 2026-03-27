@@ -93,6 +93,13 @@ Opens the ADK web UI at `http://localhost:8000`.
 | `F1_CODE_EXECUTION_AGENT_ENGINE_NAME` | No | — | Agent Engine resource used as parent for sandbox operations |
 | `F1_CODE_EXECUTION_SANDBOX_TTL_SECONDS` | No | `3600` | TTL for sandbox lifecycle in seconds |
 | `F1_CODE_EXECUTION_MAX_ROWS` | No | `500` | Max list size accepted by analytical payload validators |
+| `F1_SEMANTIC_CACHE_SIMILARITY_THRESHOLD` | No | `0.92` | Minimum cosine similarity (via normalized inner product) for cache hit |
+| `F1_SEMANTIC_CACHE_TOP_K` | No | `8` | ANN candidate count per cache lookup |
+| `F1_SEMANTIC_CACHE_HNSW_M` | No | `32` | HNSW graph degree parameter |
+| `F1_SEMANTIC_CACHE_HNSW_EF_SEARCH` | No | `64` | HNSW search breadth/recall parameter |
+| `F1_SEMANTIC_CACHE_SWEEP_INTERVAL_S` | No | `600` | Periodic sweep interval (seconds) for expiry/pruning |
+| `F1_SEMANTIC_CACHE_SWEEP_EVERY_OPS` | No | `500` | Operation-count trigger for expiry/pruning sweep |
+| `F1_SEMANTIC_CACHE_MAX_ENTRIES` | No | `50000` | Max rows in semantic cache before low-priority pruning |
 
 ## Generated Artifacts
 
@@ -147,8 +154,9 @@ Classification patterns for complex queries: comparisons (`vs`, `compare`, `dife
 
 - **Embedding model**: `GEMINI_EMBEDDING_MODEL` (default: `models/gemini-embedding-2-preview`)
 - **Similarity threshold**: 0.92 (cosine)
-- **Storage**: FAISS (in-memory vectors) + SQLite (answers, metadata, hit counts)
+- **Storage**: FAISS HNSW ANN (in-memory index) + SQLite (source of truth for answers/metadata)
 - **TTL**: 30 days for historical/regulation data, 24 hours for web-sourced answers
+- **Governance**: periodic sweep of expired rows + max entry cap with low-priority pruning
 - **Freshness guard**: Questions that require live/post-2024 data bypass cache and force fresh tool calls
 - **Location**: `f1_cache/` directory (created at runtime, gitignored)
 

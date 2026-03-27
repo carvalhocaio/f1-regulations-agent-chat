@@ -322,6 +322,22 @@ Suggested quick loop:
 3. Adjust `--container-concurrency` (multiples of 9) to absorb bursts.
 4. Keep `--max-instances` bounded for cost control.
 
+### 6.3) Semantic cache lookup benchmark (P5)
+
+Use this local benchmark to validate that cache-hit lookup stays stable as
+cache size grows and remains significantly below a brute-force O(N) scan.
+
+```fish
+uv run python deployment/benchmark_semantic_cache.py \
+  --sizes 500,2000,5000,10000 \
+  --lookups 600 \
+  --warmup 120
+```
+
+The script emits JSON with p50/p95/p99 for ANN lookup and a synthetic
+`vector_scan_*` O(N) baseline over vectors only.
+Track `ann_p95_ms` across sizes to confirm sublinear behavior.
+
 ---
 
 ## 7) CI/CD — GitHub Actions

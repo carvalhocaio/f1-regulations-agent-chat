@@ -54,6 +54,7 @@ def _prepend_user_context(llm_request, text: str) -> None:
         types.Content(role="user", parts=[types.Part(text=text)]),
     )
 
+
 # ── Model routing ───────────────────────────────────────────────────────
 
 # Fine-tuned Flash model for F1 queries (Vertex AI endpoint).
@@ -179,6 +180,23 @@ def _query_requires_web_data(text: str) -> bool:
 
     # Relative temporal expressions likely resolve to post-2024 seasons
     return any(p.search(text) for p in _RELATIVE_TEMPORAL_RE)
+
+
+_HISTORICAL_HINT_RE = re.compile(
+    r"\b(19|20)\d{2}\b|\b(histor|regulament|regulation|seasons?|championship)\b",
+    re.I,
+)
+
+
+def _classify_cache_query(text: str) -> str:
+    """Classify query type for semantic cache effectiveness metrics."""
+    if _query_requires_web_data(text):
+        return "time_sensitive"
+    if _is_complex_question(text):
+        return "complex"
+    if _HISTORICAL_HINT_RE.search(text):
+        return "historical"
+    return "simple"
 
 
 def _runtime_temporal_addendum() -> str:
@@ -422,11 +440,44 @@ def check_cache(callback_context, llm_request):
     if not user_text:
         return None
 
+    query_type = _classify_cache_query(user_text)
+
     # Time-sensitive queries should prefer fresh tool calls.
     if _query_requires_web_data(user_text):
+        logger.info(
+            "semantic_cache | query_type=%s outcome=bypass lookup_ms=0.00 "
+            "candidates=0 top1=-1.0000 evicted=0",
+            query_type,
+        )
         return None
 
-    hit = cache.get(user_text)
+    if hasattr(cache, "lookup"):
+        result = cache.lookup(user_text)
+        hit = result.answer
+        outcome = result.outcome
+        lookup_ms = result.lookup_ms
+        candidates = result.candidates_scanned
+        top1 = result.similarity_top1 if result.similarity_top1 is not None else -1.0
+        evicted = result.evicted_count
+    else:
+        hit = cache.get(user_text)
+        outcome = "hit" if hit is not None else "miss"
+        lookup_ms = 0.0
+        candidates = 0
+        top1 = -1.0
+        evicted = 0
+
+    logger.info(
+        "semantic_cache | query_type=%s outcome=%s lookup_ms=%.2f "
+        "candidates=%d top1=%.4f evicted=%d",
+        query_type,
+        outcome,
+        lookup_ms,
+        candidates,
+        top1,
+        evicted,
+    )
+
     if hit is None:
         return None
 
