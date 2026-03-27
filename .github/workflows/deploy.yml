@@ -11,17 +11,15 @@ env:
   STAGING_BUCKET: ${{ secrets.GCP_STAGING_BUCKET }}
   SA_EMAIL: ${{ secrets.GCP_SA_EMAIL }}
   RAG_CORPUS: ${{ secrets.GCP_RAG_CORPUS }}
-  MEMORY_BANK_ENABLED: ${{ secrets.GCP_MEMORY_BANK_ENABLED }}
-  MEMORY_BANK_AGENT_ENGINE_NAME: ${{ secrets.GCP_MEMORY_BANK_AGENT_ENGINE_NAME }}
   CODE_EXECUTION_ENABLED: ${{ secrets.GCP_CODE_EXECUTION_ENABLED }}
   CODE_EXECUTION_AGENT_ENGINE_NAME: ${{ secrets.GCP_CODE_EXECUTION_AGENT_ENGINE_NAME }}
   AGENT_MIN_INSTANCES: ${{ secrets.GCP_AGENT_MIN_INSTANCES }}
   AGENT_MAX_INSTANCES: ${{ secrets.GCP_AGENT_MAX_INSTANCES }}
   AGENT_CONTAINER_CONCURRENCY: ${{ secrets.GCP_AGENT_CONTAINER_CONCURRENCY }}
-  VERTEX_LLM_REQUEST_TYPE: ${{ secrets.GCP_VERTEX_LLM_REQUEST_TYPE }}
-  PREFLIGHT_TOKEN_CHECK_ENABLED: ${{ secrets.GCP_PREFLIGHT_TOKEN_CHECK_ENABLED }}
-  PREFLIGHT_TOKEN_THRESHOLD: ${{ secrets.GCP_PREFLIGHT_TOKEN_THRESHOLD }}
-  PREFLIGHT_TOKEN_HARD_LIMIT: ${{ secrets.GCP_PREFLIGHT_TOKEN_HARD_LIMIT }}
+  VERTEX_LLM_REQUEST_TYPE: shared
+  PREFLIGHT_TOKEN_CHECK_ENABLED: "false"
+  PREFLIGHT_TOKEN_THRESHOLD: "0.80"
+  PREFLIGHT_TOKEN_HARD_LIMIT: "0"
   ARTIFACTS_BUCKET: "${{ secrets.GCP_PROJECT_ID }}-artifacts"
   EVAL_DATASET_FILE: data/evals/agent_regression.v1.jsonl
   EVAL_THRESHOLDS_FILE: config/eval_thresholds.json
@@ -43,9 +41,6 @@ jobs:
         uses: google-github-actions/auth@v3
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
-          # Or, with Workload Identity Federation:
-          # workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          # service_account: ${{ secrets.GCP_SA_EMAIL }}
 
       - uses: google-github-actions/setup-gcloud@v3
 
@@ -83,22 +78,6 @@ jobs:
           AGENT_MAX_INSTANCES="${AGENT_MAX_INSTANCES:-2}"
           AGENT_CONTAINER_CONCURRENCY="${AGENT_CONTAINER_CONCURRENCY:-18}"
           VERTEX_LLM_REQUEST_TYPE="${VERTEX_LLM_REQUEST_TYPE:-shared}"
-
-          MEMORY_BANK_ARGS=()
-          if [ "${MEMORY_BANK_ENABLED}" = "true" ]; then
-            MEMORY_BANK_ARGS+=(
-              --memory-bank-enabled
-              --memory-bank-max-facts 5
-              --memory-bank-fetch-limit 20
-              --memory-bank-generate-on-correction-only
-            )
-
-            if [ -n "${MEMORY_BANK_AGENT_ENGINE_NAME}" ]; then
-              MEMORY_BANK_ARGS+=(
-                --memory-bank-agent-engine-name "${MEMORY_BANK_AGENT_ENGINE_NAME}"
-              )
-            fi
-          fi
 
           CODE_EXECUTION_ARGS=()
           if [ "${CODE_EXECUTION_ENABLED}" = "true" ]; then
@@ -142,7 +121,6 @@ jobs:
             --rag-backend "auto" \
             --rag-corpus "$RAG_CORPUS" \
             --rag-location "${RAG_REGION:-$REGION}" \
-            "${MEMORY_BANK_ARGS[@]}" \
             "${CODE_EXECUTION_ARGS[@]}" \
             "${PREFLIGHT_ARGS[@]}"
 
@@ -282,9 +260,6 @@ jobs:
         uses: google-github-actions/auth@v3
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
-          # Or, with Workload Identity Federation:
-          # workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          # service_account: ${{ secrets.GCP_SA_EMAIL }}
 
       - uses: google-github-actions/setup-gcloud@v3
 
@@ -322,22 +297,6 @@ jobs:
           AGENT_MAX_INSTANCES="${AGENT_MAX_INSTANCES:-6}"
           AGENT_CONTAINER_CONCURRENCY="${AGENT_CONTAINER_CONCURRENCY:-18}"
           VERTEX_LLM_REQUEST_TYPE="${VERTEX_LLM_REQUEST_TYPE:-shared}"
-
-          MEMORY_BANK_ARGS=()
-          if [ "${MEMORY_BANK_ENABLED}" = "true" ]; then
-            MEMORY_BANK_ARGS+=(
-              --memory-bank-enabled
-              --memory-bank-max-facts 5
-              --memory-bank-fetch-limit 20
-              --memory-bank-generate-on-correction-only
-            )
-
-            if [ -n "${MEMORY_BANK_AGENT_ENGINE_NAME}" ]; then
-              MEMORY_BANK_ARGS+=(
-                --memory-bank-agent-engine-name "${MEMORY_BANK_AGENT_ENGINE_NAME}"
-              )
-            fi
-          fi
 
           CODE_EXECUTION_ARGS=()
           if [ "${CODE_EXECUTION_ENABLED}" = "true" ]; then
@@ -381,7 +340,6 @@ jobs:
             --rag-backend "auto" \
             --rag-corpus "$RAG_CORPUS" \
             --rag-location "${RAG_REGION:-$REGION}" \
-            "${MEMORY_BANK_ARGS[@]}" \
             "${CODE_EXECUTION_ARGS[@]}" \
             "${PREFLIGHT_ARGS[@]}"
 

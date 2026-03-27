@@ -6,9 +6,7 @@ from google.genai import types
 from f1_agent.adk_compat import (
     Agent,
     App,
-    ContextCacheConfig,
     Gemini,
-    GoogleSearchTool,
     LlmResponse,
 )
 from f1_agent.callbacks import (
@@ -19,13 +17,11 @@ from f1_agent.callbacks import (
     detect_corrections,
     inject_corrections,
     inject_dynamic_examples,
-    inject_long_term_memories,
     inject_runtime_temporal_context,
     log_context_cache_metrics,
     preflight_token_check,
     route_model,
     store_cache,
-    sync_memory_bank,
     validate_grounding_outcome,
     validate_structured_response,
 )
@@ -39,8 +35,6 @@ from f1_agent.tools import (
 )
 
 CURRENT_YEAR = datetime.now().year
-
-google_search = GoogleSearchTool(bypass_multi_tools_limit=True)
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
@@ -149,13 +143,11 @@ root_agent = Agent(
         query_f1_history_template,
         query_f1_history,
         run_analytical_code,
-        google_search,
     ],
     before_model_callback=[
         check_cache,
         inject_runtime_temporal_context,
         inject_corrections,
-        inject_long_term_memories,
         inject_dynamic_examples,
         route_model,
         apply_throughput_request_type,
@@ -168,7 +160,6 @@ root_agent = Agent(
         validate_structured_response,
         validate_grounding_outcome,
         detect_corrections,
-        sync_memory_bank,
         store_cache,
     ],
     on_model_error_callback=handle_rate_limit,
@@ -176,22 +167,8 @@ root_agent = Agent(
 
 
 def build_app() -> App:
-    """Wrap the root agent in an ADK App with optional context caching.
-
-    When ``F1_CONTEXT_CACHE_ENABLED=true``, the App uses ADK's built-in
-    ``ContextCacheConfig`` which delegates to ``GeminiContextCacheManager``
-    for explicit Gemini context caching of system instruction + tools +
-    conversation history prefix.
-    """
-    cache_config = None
-    if env_bool("F1_CONTEXT_CACHE_ENABLED", False):
-        cache_config = ContextCacheConfig(
-            cache_intervals=env_int("F1_CONTEXT_CACHE_INTERVALS", 10),
-            ttl_seconds=env_int("F1_CONTEXT_CACHE_TTL", 1800),
-            min_tokens=env_int("F1_CONTEXT_CACHE_MIN_TOKENS", 4096),
-        )
+    """Wrap the root agent in an App container."""
     return App(
         name="f1_regulations_assistant",
         root_agent=root_agent,
-        context_cache_config=cache_config,
     )

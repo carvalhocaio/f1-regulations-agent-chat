@@ -19,43 +19,32 @@ def _load_smoke_module():
 smoke = _load_smoke_module()
 
 
-class ExtractSessionNameTests(unittest.TestCase):
-    def test_prefers_nested_response_session_name_over_operation_name(self):
-        expected = (
-            "projects/p/locations/l/reasoningEngines/1234567890/sessions/session-1"
+class ResourceNameTests(unittest.TestCase):
+    def test_reads_resource_name_attribute(self):
+        engine = SimpleNamespace(
+            resource_name="projects/p/locations/l/reasoningEngines/r"
         )
-        create_response = SimpleNamespace(
-            name="projects/p/locations/l/operations/operation-1",
-            response=SimpleNamespace(name=expected),
-        )
-
-        self.assertEqual(smoke._extract_session_name(create_response), expected)
-
-    def test_accepts_direct_session_name(self):
-        expected = (
-            "projects/p/locations/l/reasoningEngines/1234567890/sessions/session-2"
-        )
-        create_response = {"name": expected}
-
-        self.assertEqual(smoke._extract_session_name(create_response), expected)
-
-    def test_rejects_operation_name_when_session_is_missing(self):
-        create_response = SimpleNamespace(
-            name="projects/p/locations/l/operations/operation-2",
-            response=None,
+        self.assertEqual(
+            smoke._resource_name(engine), "projects/p/locations/l/reasoningEngines/r"
         )
 
-        self.assertIsNone(smoke._extract_session_name(create_response))
+    def test_reads_name_from_api_resource_dict(self):
+        engine = SimpleNamespace(
+            api_resource={"name": "projects/p/locations/l/reasoningEngines/r"}
+        )
+        self.assertEqual(
+            smoke._resource_name(engine), "projects/p/locations/l/reasoningEngines/r"
+        )
 
 
-class SessionUserIdTests(unittest.TestCase):
-    def test_reads_snake_case_user_id_attribute(self):
-        session = SimpleNamespace(user_id="smoke-user")
-        self.assertEqual(smoke._session_user_id(session), "smoke-user")
+class DisplayNameTests(unittest.TestCase):
+    def test_reads_display_name_attribute(self):
+        engine = SimpleNamespace(display_name="f1-agent")
+        self.assertEqual(smoke._display_name(engine), "f1-agent")
 
-    def test_reads_camel_case_user_id_from_dict(self):
-        session = {"userId": "smoke-user"}
-        self.assertEqual(smoke._session_user_id(session), "smoke-user")
+    def test_reads_display_name_from_api_resource_dict(self):
+        engine = SimpleNamespace(api_resource={"displayName": "f1-agent"})
+        self.assertEqual(smoke._display_name(engine), "f1-agent")
 
 
 if __name__ == "__main__":

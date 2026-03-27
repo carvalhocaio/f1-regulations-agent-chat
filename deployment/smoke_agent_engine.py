@@ -66,52 +66,6 @@ def _display_name(agent_engine: object) -> str | None:
     return None
 
 
-def _session_name(session: object) -> str | None:
-    name = getattr(session, "name", None)
-    if name:
-        return str(name)
-    if isinstance(session, dict):
-        value = session.get("name")
-        if value:
-            return str(value)
-    return None
-
-
-def _is_session_resource_name(name: str | None) -> bool:
-    return bool(name and "/sessions/" in name)
-
-
-def _session_user_id(session: object) -> str | None:
-    value = getattr(session, "user_id", None)
-    if value:
-        return str(value)
-    value = getattr(session, "userId", None)
-    if value:
-        return str(value)
-    if isinstance(session, dict):
-        dict_value = session.get("user_id")
-        if dict_value:
-            return str(dict_value)
-        dict_value = session.get("userId")
-        if dict_value:
-            return str(dict_value)
-    return None
-
-
-def _extract_session_name(create_response: object) -> str | None:
-    nested_response = getattr(create_response, "response", None)
-    if nested_response is not None:
-        nested_name = _session_name(nested_response)
-        if _is_session_resource_name(nested_name):
-            return nested_name
-
-    direct = _session_name(create_response)
-    if _is_session_resource_name(direct):
-        return direct
-
-    return None
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Smoke test Agent Engine list/get/delete using vertexai.Client"
@@ -133,7 +87,7 @@ def main() -> None:
 
     client = vertexai.Client(project=args.project_id, location=args.location)
 
-    print("[1/5] list")
+    print("[1/3] list")
     listed = list(client.agent_engines.list())
     listed_names = {_resource_name(engine) for engine in listed}
     if args.resource_name not in listed_names:
@@ -142,7 +96,7 @@ def main() -> None:
         )
     print(f"Found {len(listed)} resource(s); target is listed")
 
-    print("[2/5] get")
+    print("[2/3] get")
     engine = client.agent_engines.get(name=args.resource_name)
     got_name = _resource_name(engine)
     if got_name != args.resource_name:

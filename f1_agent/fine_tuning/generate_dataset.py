@@ -473,55 +473,11 @@ def gen_regulation_lookups() -> list[dict]:
     return examples
 
 
-def gen_current_season() -> list[dict]:
-    """Generate examples that should use google_search."""
-    examples = []
-    questions = [
-        (
-            "Who is leading the 2026 championship?",
-            "F1 2026 drivers championship standings",
-        ),
-        ("When is the next F1 race?", "F1 2026 next race schedule"),
-        ("Quem está liderando o campeonato?", "F1 2026 drivers championship standings"),
-        ("What happened in the last race?", "F1 2026 latest race results"),
-        ("Qual é o calendário da F1 2026?", "F1 2026 race calendar schedule"),
-    ]
-
-    for question, search_request in questions:
-        answer = (
-            "🏁 [Current season information from web search]\n\n"
-            "---\n**Sources:**\n\n"
-            "🌐 *Web:*\n"
-            "- **formula1.com**: Current season information"
-        )
-
-        examples.append(
-            build_example(
-                user_message=question,
-                function_calls=[
-                    {
-                        "name": "google_search",
-                        "args": {"request": search_request},
-                    }
-                ],
-                function_responses=[
-                    {
-                        "name": "google_search",
-                        "response": {"status": "success", "results": "..."},
-                    }
-                ],
-                model_answer=answer,
-            )
-        )
-
-    return examples
-
-
 def gen_temporal_reasoning() -> list[dict]:
-    """Generate examples requiring both DB + web (temporal split)."""
+    """Generate examples requiring explicit out-of-coverage disclaimers."""
     examples = []
 
-    # "Last 5 champions" in 2026 → 2022-2024 from DB + 2025-2026 from web
+    # "Last N champions" in 2026 -> DB up to 2024 + explicit limitation for 2025+
     for n, from_year in [(5, 2022), (10, 2017)]:
         sql = resolve_template("driver_champions", from_year=from_year, to_year=2024)
         rows = _query(sql)
@@ -544,14 +500,12 @@ def gen_temporal_reasoning() -> list[dict]:
             f"🏆 **Last {n} F1 World Champions**\n\n"
             f"From historical database:\n"
             + "\n".join(db_lines)
-            + "\n\nFrom web search:\n"
-            "- **2025**: [from google_search]\n"
-            "- **2026**: [from google_search]\n\n"
+            + "\n\nOutside database coverage:\n"
+            "- Data for 2025 onward is not available in the local historical database.\n"
+            "- Ask a 1950-2024 range, or provide an external source to verify newer years.\n\n"
             "---\n**Sources:**\n\n"
             "📊 *Historical Data:*\n"
-            "- **Kaggle — F1 World Championship (1950-2024)**\n\n"
-            "🌐 *Web:*\n"
-            "- **formula1.com**: 2025-2026 champions"
+            "- **Kaggle — F1 World Championship (1950-2024)**"
         )
 
         examples.append(
@@ -567,10 +521,6 @@ def gen_temporal_reasoning() -> list[dict]:
                             ),
                         },
                     },
-                    {
-                        "name": "google_search",
-                        "args": {"request": "F1 world drivers champion 2025 and 2026"},
-                    },
                 ],
                 function_responses=[
                     {
@@ -580,10 +530,6 @@ def gen_temporal_reasoning() -> list[dict]:
                             "results": rows,
                             "row_count": len(rows),
                         },
-                    },
-                    {
-                        "name": "google_search",
-                        "response": {"status": "success", "results": "..."},
                     },
                 ],
                 model_answer=answer,
@@ -602,7 +548,6 @@ ALL_GENERATORS = [
     gen_records,
     gen_season_standings,
     gen_regulation_lookups,
-    gen_current_season,
     gen_temporal_reasoning,
 ]
 

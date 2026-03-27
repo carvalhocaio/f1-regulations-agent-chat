@@ -1,16 +1,12 @@
 """
-ADK callbacks for model routing, semantic caching, and session corrections.
+Runtime callbacks for model routing, semantic caching, and session corrections.
 
 - ``route_model``: before-model callback that routes simple queries to Flash.
 - ``check_cache`` / ``store_cache``: semantic answer cache callbacks.
 - ``inject_corrections``: before-model callback that injects stored user
   corrections into the system instruction so the model doesn't repeat mistakes.
-- ``inject_long_term_memories``: before-model callback that injects cross-session
-  Memory Bank facts for the same user.
 - ``detect_corrections``: after-model callback (actually runs on user turn)
   that detects correction patterns and stores them in session state.
-- ``sync_memory_bank``: after-model callback that triggers long-term memory
-  generation from current session context.
 """
 
 from __future__ import annotations
@@ -26,13 +22,6 @@ from google.genai import types
 from f1_agent.adk_compat import LlmResponse
 from f1_agent.cache import SemanticCache
 from f1_agent.example_store import build_dynamic_examples_addendum
-from f1_agent.memory_bank import (
-    build_memory_addendum,
-    generate_memories_from_session,
-)
-from f1_agent.memory_bank import (
-    load_settings as load_memory_bank_settings,
-)
 from f1_agent.response_contract import (
     CONTRACT_ID_COMPARISON_TABLE_V1,
     CONTRACT_ID_SOURCES_BLOCK_V1,
@@ -243,15 +232,13 @@ def _runtime_temporal_addendum() -> str:
         " are FINISHED, HISTORICAL seasons.\n"
         "- Historical DB coverage: 1950-2024 only.\n"
         f"- For data from 2025 through {last_completed}:"
-        " use google_search.\n"
+        " outside local database coverage.\n"
         f"- For data from {current_year} (ongoing season):"
-        " use google_search.\n"
+        " outside local database coverage.\n"
         "- CRITICAL: Your training data may be outdated. If your training"
         f" data says '{last_completed} season hasn't concluded' or similar,"
         f" THAT IS WRONG. Trust THIS instruction: the {last_completed}"
-        " season is over. When google_search returns results about"
-        " post-2024 seasons, TRUST and REPORT those results."
-        " Do NOT contradict them with your training knowledge.\n"
+        " season is over. Do NOT contradict this with stale assumptions.\n"
         "- Do not describe completed seasons as future or ongoing events."
     )
 
@@ -315,7 +302,8 @@ def _resolve_temporal_references(user_text: str) -> str | None:
         )
         if last_completed > _DB_MAX_YEAR:
             tool_hints.append(
-                f"- Year {last_completed} is NOT in the database -> use google_search"
+                f"- Year {last_completed} is NOT in the local database; explicitly "
+                "state this limitation"
             )
         else:
             tool_hints.append(
@@ -338,11 +326,11 @@ def _resolve_temporal_references(user_text: str) -> str | None:
             tool_hints.append(
                 f"- DB (query_f1_history_template): {db_years[0]}-{db_years[-1]}"
             )
-            tool_hints.append(f"- Web (google_search): {web_years[0]}-{web_years[-1]}")
+            tool_hints.append(f"- Outside DB coverage: {web_years[0]}-{web_years[-1]}")
             tool_hints.append("- Combine BOTH into a single unified answer")
         elif web_years:
             tool_hints.append(
-                f"- All years ({web_years[0]}-{web_years[-1]}) need google_search"
+                f"- All years ({web_years[0]}-{web_years[-1]}) are outside DB coverage"
             )
         elif db_years:
             tool_hints.append(
@@ -356,12 +344,14 @@ def _resolve_temporal_references(user_text: str) -> str | None:
             f" (season COMPLETED)"
         )
         if last_completed > _DB_MAX_YEAR:
-            tool_hints.append(f"- {last_completed} champion: use google_search")
+            tool_hints.append(
+                f"- {last_completed} champion is outside DB coverage; state limitation"
+            )
 
     # "esta temporada" / "this season"
     if _THIS_SEASON_RE.search(user_text):
         resolutions.append(f"- 'This/current season' = {current_year} (may be ongoing)")
-        tool_hints.append(f"- {current_year} season: use google_search")
+        tool_hints.append(f"- {current_year} season is outside DB coverage")
 
     if _LAST_EVENT_RE.search(user_text) and not _YEAR_RE.search(user_text):
         resolutions.append(
@@ -372,9 +362,7 @@ def _resolve_temporal_references(user_text: str) -> str | None:
             f"- In {current_year}, that usually means {last_completed} or {current_year}"
             " depending on event date"
         )
-        tool_hints.append(
-            "- Use google_search and return the event DATE and YEAR to prove recency"
-        )
+        tool_hints.append("- Return event DATE and YEAR to prove recency")
         tool_hints.append(
             "- Never claim a season/event before current year is still in the future"
         )
@@ -384,7 +372,7 @@ def _resolve_temporal_references(user_text: str) -> str | None:
             f"- Missing year + 'next event' wording = next scheduled event in {current_year}"
         )
         tool_hints.append(
-            "- Use google_search for the current-year calendar and return event date"
+            "- Return the event date from verified sources when available"
         )
 
     if _CURRENT_STANDINGS_RE.search(user_text):
@@ -392,8 +380,7 @@ def _resolve_temporal_references(user_text: str) -> str | None:
             f"- Standings/leader request without explicit year defaults to {current_year}"
         )
         tool_hints.append(
-            "- Use google_search and verify if at least one race in the current"
-            " season has already happened"
+            "- Verify whether at least one race in the current season has happened"
         )
         if current_date.month <= 2:
             tool_hints.append(
@@ -557,7 +544,7 @@ def apply_grounding_policy(callback_context, llm_request):
     addendum = (
         "## Grounding policy (factual-critical route)\n"
         "This request is time-sensitive/current-state. You MUST ground claims with "
-        "fresh web evidence using google_search before finalizing the answer.\n"
+        "fresh evidence before finalizing the answer.\n"
         "Requirements:\n"
         "- Do not answer from stale memory for current-state facts.\n"
         "- Include at least one web source with URL in the final response.\n"
@@ -971,11 +958,7 @@ def store_cache(callback_context, llm_response):
         if texts:
             answer = "\n".join(texts)
             # Detect if answer used web data (short TTL)
-            used_web = (
-                "🌐" in answer
-                or "google_search" in answer.lower()
-                or _query_requires_web_data(user_text)
-            )
+            used_web = "🌐" in answer or _query_requires_web_data(user_text)
             cache.put(user_text, answer, web_source=used_web)
             logger.debug("Cache STORE for: %s", user_text[:80])
 
@@ -986,7 +969,6 @@ def store_cache(callback_context, llm_response):
 
 _CORRECTIONS_KEY = "f1_corrections"
 _MAX_CORRECTIONS = 20
-_MEMORY_GENERATE_FLAG_KEY = "f1_generate_memory"
 
 # Patterns that indicate the user is correcting the agent
 _CORRECTION_PATTERNS: list[re.Pattern] = [
@@ -1040,69 +1022,6 @@ def _store_correction(callback_context, correction: str) -> None:
     state[_CORRECTIONS_KEY] = corrections
 
 
-def _extract_user_id(callback_context) -> str | None:
-    user_id = getattr(callback_context, "user_id", None)
-    if isinstance(user_id, str) and user_id.strip():
-        return user_id.strip()
-
-    invocation_context = getattr(callback_context, "invocation_context", None)
-    nested_user_id = getattr(invocation_context, "user_id", None)
-    if isinstance(nested_user_id, str) and nested_user_id.strip():
-        return nested_user_id.strip()
-
-    state = getattr(callback_context, "state", None)
-    if isinstance(state, dict):
-        fallback = state.get("user_id")
-        if isinstance(fallback, str) and fallback.strip():
-            return fallback.strip()
-
-    return None
-
-
-def _extract_session_name(callback_context) -> str | None:
-    session_name = getattr(callback_context, "session_name", None)
-    if isinstance(session_name, str) and "/sessions/" in session_name:
-        return session_name
-
-    session = getattr(callback_context, "session", None)
-    session_from_obj = getattr(session, "name", None)
-    if isinstance(session_from_obj, str) and "/sessions/" in session_from_obj:
-        return session_from_obj
-
-    session_id = getattr(callback_context, "session_id", None)
-    if not isinstance(session_id, str) or not session_id.strip():
-        return None
-
-    settings = load_memory_bank_settings()
-    if (
-        not settings.project_id
-        or not settings.location
-        or not settings.agent_engine_name
-    ):
-        return None
-
-    if "/sessions/" in session_id:
-        return session_id
-
-    return f"{settings.agent_engine_name}/sessions/{session_id.strip()}"
-
-
-def _mark_memory_generation(callback_context) -> None:
-    state = getattr(callback_context, "state", None)
-    if isinstance(state, dict):
-        state[_MEMORY_GENERATE_FLAG_KEY] = True
-
-
-def _consume_memory_generation_flag(callback_context) -> bool:
-    state = getattr(callback_context, "state", None)
-    if not isinstance(state, dict):
-        return False
-
-    flagged = bool(state.get(_MEMORY_GENERATE_FLAG_KEY, False))
-    state.pop(_MEMORY_GENERATE_FLAG_KEY, None)
-    return flagged
-
-
 def inject_corrections(callback_context, llm_request):
     """Before-model callback: inject stored corrections into the prompt.
 
@@ -1149,27 +1068,6 @@ def inject_dynamic_examples(callback_context, llm_request):
     return None
 
 
-def inject_long_term_memories(callback_context, llm_request):
-    """Before-model callback: inject relevant cross-session memories."""
-    user_id = _extract_user_id(callback_context)
-    if not user_id:
-        return None
-
-    user_text = _extract_user_text(callback_context, llm_request)
-    addendum, metadata = build_memory_addendum(user_id=user_id, query_text=user_text)
-    if not addendum:
-        logger.debug(
-            "Memory injection skipped (enabled=%s configured=%s)",
-            metadata.get("enabled"),
-            metadata.get("configured"),
-        )
-        return None
-
-    _prepend_user_context(llm_request, addendum)
-    logger.info("Injected long-term memories: count=%s", metadata.get("memory_count"))
-    return None
-
-
 def inject_runtime_temporal_context(callback_context, llm_request):
     """Before-model callback: inject dynamic date/year guidance every request.
 
@@ -1209,40 +1107,9 @@ def detect_corrections(callback_context, llm_response):
         correction = correction[:500] + "…"
 
     _store_correction(callback_context, correction)
-    _mark_memory_generation(callback_context)
     logger.info("Correction stored: %s", correction[:80])
 
     return None  # don't modify the response
-
-
-def sync_memory_bank(callback_context, llm_response):
-    """After-model callback: trigger long-term memory generation from session."""
-    del llm_response  # unused
-
-    settings = load_memory_bank_settings()
-    if not settings.enabled:
-        return None
-
-    should_generate = _consume_memory_generation_flag(callback_context)
-
-    if not should_generate and settings.generate_on_correction_only:
-        return None
-
-    session_name = _extract_session_name(callback_context)
-    if not session_name:
-        logger.debug("Memory generation skipped: missing session name")
-        return None
-
-    user_id = _extract_user_id(callback_context)
-    generated = generate_memories_from_session(
-        session_name=session_name,
-        user_id=user_id,
-        wait_for_completion=False,
-    )
-    if generated:
-        logger.info("Triggered memory generation for session: %s", session_name)
-
-    return None
 
 
 def log_context_cache_metrics(callback_context, llm_response):

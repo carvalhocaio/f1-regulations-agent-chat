@@ -216,8 +216,8 @@ def _validate_runtime_scaling(args: argparse.Namespace) -> None:
 
     if args.container_concurrency % 9 != 0:
         print(
-            "Warning: for ADK async agents, use --container-concurrency as "
-            "a multiple of 9 (for example, 18 or 36)."
+            "Warning: consider --container-concurrency values that match your "
+            "observed workload profile (for example, 18 or 36)."
         )
 
 
@@ -245,7 +245,7 @@ def main():
         "--container-concurrency",
         type=int,
         default=18,
-        help="Max concurrent requests per container (ADK async: multiple of 9)",
+        help="Max concurrent requests per container",
     )
     parser.add_argument(
         "--rag-backend",
@@ -325,34 +325,6 @@ def main():
         help="Minimum similarity score required for dynamic examples",
     )
     parser.add_argument(
-        "--memory-bank-enabled",
-        action="store_true",
-        help="Enable long-term Memory Bank retrieval and generation",
-    )
-    parser.add_argument(
-        "--memory-bank-agent-engine-name",
-        default="",
-        help="Optional Agent Engine resource name for Memory Bank API calls",
-    )
-    parser.add_argument(
-        "--memory-bank-max-facts",
-        type=int,
-        default=5,
-        help="Maximum memory facts injected per request",
-    )
-    parser.add_argument(
-        "--memory-bank-fetch-limit",
-        type=int,
-        default=20,
-        help="Maximum memories retrieved before filtering",
-    )
-    parser.add_argument(
-        "--memory-bank-generate-on-correction-only",
-        action="store_true",
-        default=True,
-        help="Trigger memory generation only on explicit correction turns",
-    )
-    parser.add_argument(
         "--code-execution-enabled",
         action="store_true",
         help="Enable restricted analytical Code Execution sandbox tool",
@@ -407,31 +379,6 @@ def main():
         default=0,
         help="Absolute token cap (0 = use fraction of context window)",
     )
-    # ── Context Cache (Gemini native prompt caching) ──
-    parser.add_argument(
-        "--context-cache-enabled",
-        action="store_true",
-        default=False,
-        help="Enable explicit Gemini context caching via ADK ContextCacheConfig",
-    )
-    parser.add_argument(
-        "--context-cache-intervals",
-        type=int,
-        default=10,
-        help="Max invocations per explicit cache before recreation",
-    )
-    parser.add_argument(
-        "--context-cache-ttl",
-        type=int,
-        default=1800,
-        help="Explicit cache TTL in seconds (default: 30 min)",
-    )
-    parser.add_argument(
-        "--context-cache-min-tokens",
-        type=int,
-        default=4096,
-        help="Minimum token count to trigger explicit caching",
-    )
     args = parser.parse_args()
 
     if args.example_store_enabled and not args.example_store_name:
@@ -483,15 +430,6 @@ def main():
         "F1_EXAMPLE_STORE_NAME": args.example_store_name,
         "F1_EXAMPLE_STORE_TOP_K": str(max(1, args.example_store_top_k)),
         "F1_EXAMPLE_STORE_MIN_SCORE": str(args.example_store_min_score),
-        "F1_MEMORY_BANK_ENABLED": "true" if args.memory_bank_enabled else "false",
-        "F1_MEMORY_BANK_PROJECT_ID": args.project_id,
-        "F1_MEMORY_BANK_LOCATION": args.location,
-        "F1_MEMORY_BANK_AGENT_ENGINE_NAME": args.memory_bank_agent_engine_name,
-        "F1_MEMORY_BANK_MAX_FACTS": str(max(1, args.memory_bank_max_facts)),
-        "F1_MEMORY_BANK_FETCH_LIMIT": str(max(1, args.memory_bank_fetch_limit)),
-        "F1_MEMORY_BANK_GENERATE_ON_CORRECTION_ONLY": "true"
-        if args.memory_bank_generate_on_correction_only
-        else "false",
         "F1_CODE_EXECUTION_ENABLED": "true" if args.code_execution_enabled else "false",
         "F1_CODE_EXECUTION_AGENT_ENGINE_NAME": args.code_execution_agent_engine_name,
         "F1_CODE_EXECUTION_LOCATION": args.code_execution_location,
@@ -508,11 +446,6 @@ def main():
             max(0.0, min(1.0, args.preflight_token_threshold))
         ),
         "F1_PREFLIGHT_TOKEN_HARD_LIMIT": str(max(0, args.preflight_token_hard_limit)),
-        # Context Cache (Gemini native prompt caching via ADK ContextCacheConfig)
-        "F1_CONTEXT_CACHE_ENABLED": "true" if args.context_cache_enabled else "false",
-        "F1_CONTEXT_CACHE_INTERVALS": str(max(1, args.context_cache_intervals)),
-        "F1_CONTEXT_CACHE_TTL": str(max(60, args.context_cache_ttl)),
-        "F1_CONTEXT_CACHE_MIN_TOKENS": str(max(0, args.context_cache_min_tokens)),
     }
 
     if args.rag_corpus:

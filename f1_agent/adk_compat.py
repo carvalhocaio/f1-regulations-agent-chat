@@ -26,13 +26,6 @@ class Gemini:
 
 
 @dataclass
-class ContextCacheConfig:
-    cache_intervals: int = 10
-    ttl_seconds: int = 1800
-    min_tokens: int = 4096
-
-
-@dataclass
 class Agent:
     name: str
     model: Any
@@ -48,7 +41,6 @@ class Agent:
 class App:
     name: str
     root_agent: Agent
-    context_cache_config: ContextCacheConfig | None = None
 
 
 @dataclass
@@ -110,20 +102,3 @@ class Runner:
     session_service: InMemorySessionService | None = None
     memory_service: Any = None
     auto_create_session: bool = True
-
-
-class GoogleSearchTool:
-    def __init__(self, bypass_multi_tools_limit: bool = True):
-        del bypass_multi_tools_limit
-        self.name = "google_search"
-
-    def __call__(self, request: str, **kwargs) -> dict[str, Any]:
-        del kwargs
-        return {
-            "status": "disabled",
-            "request": request,
-            "reason": (
-                "google_search tool is disabled in local runtime after removing "
-                "google-adk dependency."
-            ),
-        }

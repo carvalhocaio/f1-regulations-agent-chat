@@ -96,7 +96,7 @@ class SchemaTests(unittest.TestCase):
         self.assertIn("query_f1_history_template", names)
         self.assertIn("query_f1_history", names)
         self.assertIn("search_regulations", names)
-        self.assertIn("google_search", names)
+        self.assertNotIn("google_search", names)
         self.assertIn("run_analytical_code", names)
 
     def test_run_analytical_code_has_enum_task_type(self):

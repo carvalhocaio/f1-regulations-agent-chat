@@ -129,7 +129,7 @@ class TemporalResolutionTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIn("2025", result)
         self.assertIn("COMPLETED", result)
-        self.assertIn("google_search", result)
+        self.assertIn("local database", result.lower())
 
     @patch("f1_agent.callbacks._current_year", return_value=2026)
     def test_resolves_last_season_en(self, _mock):
@@ -143,9 +143,9 @@ class TemporalResolutionTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIn("2023", result)
         self.assertIn("2025", result)
-        # Should suggest both DB and web
+        # Should suggest both DB and out-of-coverage years
         self.assertIn("DB", result)
-        self.assertIn("google_search", result)
+        self.assertIn("outside", result.lower())
 
     @patch("f1_agent.callbacks._current_year", return_value=2026)
     def test_resolves_current_champion(self, _mock):

@@ -430,7 +430,6 @@ Configure under **Settings > Secrets and variables > Actions**:
 | `GCP_AGENT_MIN_INSTANCES` | Optional; defaults to `2` in workflow |
 | `GCP_AGENT_MAX_INSTANCES` | Optional; defaults to `6` in workflow |
 | `GCP_AGENT_CONTAINER_CONCURRENCY` | Optional; defaults to `18` in workflow |
-| `GCP_VERTEX_LLM_REQUEST_TYPE` | Optional; `shared` (DSQ, default) or `dedicated` (Provisioned Throughput) |
 
 > **Recommended**: Use [Workload Identity Federation](https://github.com/google-github-actions/auth#workload-identity-federation) instead of SA key for keyless authentication.
 

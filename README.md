@@ -3,7 +3,6 @@
 AI assistant for Formula 1 that combines:
 - Official **FIA 2026 regulations** (hybrid RAG over PDFs)
 - Historical **F1 World Championship data (1950-2024)** in SQLite
-- **Current and time-sensitive** information via Google Search
 
 Built with Gemini + Vertex AI SDK and powered by local runtime wiring.
 
@@ -15,7 +14,6 @@ Built with Gemini + Vertex AI SDK and powered by local runtime wiring.
 - `search_regulations` — hybrid retrieval (FAISS semantic + BM25 keyword) over FIA 2026 Sections A-F
 - `query_f1_history_template` — pre-built SQL templates for common F1 queries (champions, career stats, records, standings, head-to-head)
 - `query_f1_history` — read-only SQL access to historical F1 data
-- `google_search` — live web retrieval for current season/news
 - `run_analytical_code` — restricted Code Execution sandbox for advanced analytics (feature-flagged)
 
 **Intelligence layer:**
@@ -23,7 +21,6 @@ Built with Gemini + Vertex AI SDK and powered by local runtime wiring.
 - **Semantic cache** — near-instant responses for repeated/similar questions (cosine similarity > 0.92)
 - **Session corrections** — detects when users correct the agent (PT/EN) and avoids repeating mistakes
 - **Local sessions (A2)** — in-memory session identity (`user_id` + `session_id`) for runtime context
-- **Memory Bank (A3)** — optional long-term memory retrieval/generation per user across sessions
 - **Dynamic few-shot via Example Store (A5)** — retrieves similar examples of real errors at runtime (feature-flagged)
 - **Code Execution sandbox (A6, restricted mode)** — allowlisted analytical templates for simulations/statistics (feature-flagged)
 - **RAG Engine rollout (A4)** — `search_regulations` supports phased routing (`auto|local|vertex`) with automatic fallback to local hybrid RAG
@@ -45,8 +42,6 @@ User question
     |
 [inject_corrections] --> Append session corrections to prompt
     |
-[inject_long_term_memories] --> Inject relevant cross-session memories
-    |
 [inject_dynamic_examples] --> Retrieve similar corrected errors from Example Store
     |
 [route_model] -----> Simple? -> Flash/Tuned | Complex? -> Pro
@@ -63,16 +58,11 @@ Agent Runtime (Gemini)
     |-- Free-form SQL ---------> query_f1_history(sql_query)
     |                             -> SQLite (1950-2024, SELECT only)
     |
-    |-- Current/live ----------> google_search(request)
-    |                             -> Web results
-    |
     |-- Advanced analytics ----> run_analytical_code(task_type, payload)
     |                             -> Agent Engine sandbox (restricted templates)
     |
     v
 [detect_corrections] --> Store if user corrected the agent
-    |
-[sync_memory_bank] ---> Generate long-term memory from current session context
     |
 [store_cache] --------> Cache the answer for future reuse
                          (time-sensitive/web queries are not reused via cache)
@@ -92,7 +82,7 @@ For clients without authentication, keep sessions persistent by sending:
 Recommended flow:
 
 1. First call: send `client_id`, omit `session_id`
-2. Backend creates Vertex session with TTL and returns `session_id`
+2. Backend creates local in-memory session and returns `session_id`
 3. Client stores `session_id` and sends it on subsequent calls
 
 This enables cross-request persistence for callback state (for example, correction memory).
@@ -170,15 +160,6 @@ GOOGLE_API_KEY=your-key-here
 # F1_EXAMPLE_STORE_TOP_K=3
 # F1_EXAMPLE_STORE_MIN_SCORE=0.65
 
-# Optional (A3 Memory Bank). Keep disabled by default.
-# F1_MEMORY_BANK_ENABLED=false
-# F1_MEMORY_BANK_PROJECT_ID=<PROJECT_ID>
-# F1_MEMORY_BANK_LOCATION=us-central1
-# F1_MEMORY_BANK_AGENT_ENGINE_NAME=projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>
-# F1_MEMORY_BANK_MAX_FACTS=5
-# F1_MEMORY_BANK_FETCH_LIMIT=20
-# F1_MEMORY_BANK_GENERATE_ON_CORRECTION_ONLY=true
-
 # Optional (A6 restricted Code Execution). Keep disabled by default.
 # F1_CODE_EXECUTION_ENABLED=false
 # F1_CODE_EXECUTION_LOCATION=us-central1
@@ -233,10 +214,6 @@ For detailed setup instructions, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 - "Which constructor has the most championships?"
 - "Compare Hamilton and Schumacher race wins."
 
-**Current/live:**
-- "What is the race calendar for this season?"
-- "Who leads the championship right now?"
-
 **Cross-source:**
 - "Compare Schumacher's 2004 dominance with 2026 regulation changes."
 - "Show the last 10 drivers' champions."
@@ -260,7 +237,6 @@ f1-regulations-agent-chat/
 │   ├── streaming_protocol.py    # Stream event envelope (`stream_protocol_version=v1`)
 │   ├── bidi.py                 # Helpers to convert bidi SDK events into protocol events
 │   ├── websocket_bridge.py      # Framework-agnostic WebSocket <-> bidi bridge loop
-│   ├── memory_bank.py          # Long-term memory retrieval/generation (A3)
 │   ├── cache.py                # SemanticCache (FAISS + SQLite, TTL-based)
 │   ├── code_execution.py       # Restricted analytical sandbox adapter (A6)
 │   ├── tools.py                # Agent tools (regulations, history, search)
@@ -270,7 +246,7 @@ f1-regulations-agent-chat/
 │   ├── db.py                   # SQLite schema/build/query helpers
 │   ├── sql_templates.py        # 15 pre-built SQL templates for common queries
 │   ├── prompts/
-│   │   └── system_instruction.txt  # Externalized system prompt with few-shot examples
+│   │   └── system_instruction_static.txt  # Externalized system prompt with few-shot examples
 │   └── fine_tuning/
 │       ├── schema.py           # Vertex AI SFT dataset format helpers
 │       ├── generate_dataset.py # Auto-generates Q&A pairs from real F1 database

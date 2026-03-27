@@ -4,17 +4,17 @@ from f1_agent.agent import root_agent
 
 
 class AgentToolContractTests(unittest.TestCase):
-    def test_instruction_uses_google_search_name(self):
+    def test_instruction_does_not_reference_removed_google_search(self):
         instruction = root_agent.static_instruction
 
-        self.assertIn("google_search", instruction)
+        self.assertNotIn("google_search", instruction)
         self.assertNotIn("google_search_agent", instruction)
 
     def test_instruction_does_not_allow_search_alias(self):
         instruction = root_agent.static_instruction
 
         self.assertNotIn("`search`", instruction)
-        self.assertIn("NEVER invent tool names", instruction)
+        self.assertIn("Never invent tool names", instruction)
 
     def test_instruction_mentions_analytical_sandbox_tool(self):
         instruction = root_agent.static_instruction
@@ -43,32 +43,27 @@ class AgentToolContractTests(unittest.TestCase):
         self.assertIn("query_f1_history", tool_names)
         self.assertIn("query_f1_history_template", tool_names)
         self.assertIn("run_analytical_code", tool_names)
-        self.assertIn("google_search", tool_names)
+        self.assertNotIn("google_search", tool_names)
         self.assertNotIn("search", tool_names)
 
     def test_instruction_enforces_last_event_without_year_policy(self):
         instruction = root_agent.static_instruction
 
-        self.assertIn("last completed edition", instruction)
-        self.assertIn("DATE + YEAR", instruction)
+        self.assertIn("outside local database coverage", instruction)
+        self.assertIn("Relative expressions", instruction)
 
     def test_instruction_enforces_preseason_leader_guard(self):
         instruction = root_agent.static_instruction
 
-        self.assertIn("A temporada atual", instruction)
-        self.assertIn("ainda não começou", instruction)
+        self.assertIn("Current year", instruction)
+        self.assertIn("outside local database coverage", instruction)
 
     def test_before_model_callback_includes_dynamic_examples(self):
         callback_names = [cb.__name__ for cb in root_agent.before_model_callback]
 
-        self.assertIn("inject_long_term_memories", callback_names)
         self.assertIn("inject_dynamic_examples", callback_names)
         self.assertLess(
             callback_names.index("inject_corrections"),
-            callback_names.index("inject_long_term_memories"),
-        )
-        self.assertLess(
-            callback_names.index("inject_long_term_memories"),
             callback_names.index("inject_dynamic_examples"),
         )
         self.assertLess(
@@ -92,12 +87,11 @@ class AgentToolContractTests(unittest.TestCase):
             callback_names.index("preflight_token_check"),
         )
 
-    def test_after_model_callback_includes_memory_sync(self):
+    def test_after_model_callback_order(self):
         callback_names = [cb.__name__ for cb in root_agent.after_model_callback]
 
         self.assertIn("validate_structured_response", callback_names)
         self.assertIn("validate_grounding_outcome", callback_names)
-        self.assertIn("sync_memory_bank", callback_names)
         self.assertLess(
             callback_names.index("log_context_cache_metrics"),
             callback_names.index("validate_structured_response"),
@@ -108,7 +102,7 @@ class AgentToolContractTests(unittest.TestCase):
         )
         self.assertLess(
             callback_names.index("detect_corrections"),
-            callback_names.index("sync_memory_bank"),
+            callback_names.index("store_cache"),
         )
 
 

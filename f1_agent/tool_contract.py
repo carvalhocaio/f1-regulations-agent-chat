@@ -8,14 +8,12 @@ TOOL_NAME_SEARCH_REGULATIONS = "search_regulations"
 TOOL_NAME_QUERY_F1_HISTORY_TEMPLATE = "query_f1_history_template"
 TOOL_NAME_QUERY_F1_HISTORY = "query_f1_history"
 TOOL_NAME_RUN_ANALYTICAL_CODE = "run_analytical_code"
-TOOL_NAME_GOOGLE_SEARCH = "google_search"
 
 ALLOWED_TOOL_NAMES = [
     TOOL_NAME_SEARCH_REGULATIONS,
     TOOL_NAME_QUERY_F1_HISTORY_TEMPLATE,
     TOOL_NAME_QUERY_F1_HISTORY,
     TOOL_NAME_RUN_ANALYTICAL_CODE,
-    TOOL_NAME_GOOGLE_SEARCH,
 ]
 
 
@@ -74,21 +72,6 @@ def build_tool_declarations() -> list[dict[str, Any]]:
                     },
                 },
                 "required": ["query"],
-                "additionalProperties": False,
-            },
-        },
-        {
-            "name": TOOL_NAME_GOOGLE_SEARCH,
-            "description": "Search the web for current/live F1 information.",
-            "parameters": {
-                "type": "OBJECT",
-                "properties": {
-                    "request": {
-                        "type": "STRING",
-                        "description": "Web search request.",
-                    },
-                },
-                "required": ["request"],
                 "additionalProperties": False,
             },
         },

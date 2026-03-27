@@ -81,13 +81,6 @@ because the previous ADK web UI entrypoint was removed.
 | `F1_EXAMPLE_STORE_NAME` | No | — | Example Store resource name: `projects/.../locations/.../exampleStores/...` |
 | `F1_EXAMPLE_STORE_TOP_K` | No | `3` | Number of candidate examples retrieved per request |
 | `F1_EXAMPLE_STORE_MIN_SCORE` | No | `0.65` | Similarity threshold for injecting an example |
-| `F1_MEMORY_BANK_ENABLED` | No | `false` | Enables long-term memory retrieval/generation using Memory Bank |
-| `F1_MEMORY_BANK_PROJECT_ID` | No | — | Explicit project id for Memory Bank client |
-| `F1_MEMORY_BANK_LOCATION` | No | `us-central1` | Region for Memory Bank operations |
-| `F1_MEMORY_BANK_AGENT_ENGINE_NAME` | No | — | Agent Engine resource name for memories API calls |
-| `F1_MEMORY_BANK_MAX_FACTS` | No | `5` | Max long-term memories injected in each request |
-| `F1_MEMORY_BANK_FETCH_LIMIT` | No | `20` | Max memory records fetched before filtering |
-| `F1_MEMORY_BANK_GENERATE_ON_CORRECTION_ONLY` | No | `true` | Generate memory only when user explicitly corrects the agent |
 | `F1_CODE_EXECUTION_ENABLED` | No | `false` | Enables restricted analytical Code Execution tool |
 | `F1_CODE_EXECUTION_LOCATION` | No | `us-central1` | Region for Code Execution sandboxes (currently only `us-central1`) |
 | `F1_CODE_EXECUTION_AGENT_ENGINE_NAME` | No | — | Agent Engine resource used as parent for sandbox operations |
@@ -121,25 +114,23 @@ These directories are gitignored and must be generated locally:
 
 ### Callback Pipeline
 
-Every request passes through a pipeline of ADK callbacks:
+Every request passes through a callback pipeline:
 
 ```text
 Before model:
   1. check_cache      — Return cached answer if similarity > 0.92
   2. inject_runtime_temporal_context — Inject current UTC date/year per request
   3. inject_corrections — Append user corrections from this session
-  4. inject_long_term_memories — Inject relevant cross-session memories (A3)
-  5. inject_dynamic_examples — Retrieve real-error few-shots from Example Store
-  6. route_model      — Route to Flash/tuned (simple) or Pro (complex)
-  7. apply_throughput_request_type — Set `X-Vertex-AI-LLM-Request-Type` (`shared|dedicated`)
+  4. inject_dynamic_examples — Retrieve real-error few-shots from Example Store
+  5. route_model      — Route to Flash/tuned (simple) or Pro (complex)
+  6. apply_throughput_request_type — Set `X-Vertex-AI-LLM-Request-Type` (`shared|dedicated`)
 
 After model:
   7. detect_corrections — Detect if the user corrected the agent (PT/EN)
-  8. sync_memory_bank — Trigger long-term memory generation from session events
-  9. store_cache      — Cache the answer (TTL: 30 days static, 24h web)
+  8. store_cache      — Cache the answer (TTL: 30 days static, 24h web)
 
 On error:
-  10. handle_rate_limit — User-friendly fallback after retry exhaustion (429/503)
+  9. handle_rate_limit — User-friendly fallback after retry exhaustion (429/503)
 
 Runtime resilience layer:
   - LLM runtime retries via Gemini `HttpRetryOptions` (exponential backoff + jitter)
@@ -266,18 +257,6 @@ F1_CODE_EXECUTION_MAX_ROWS=500
 
 For no-login clients, keep a stable browser `client_id` and derive deterministic anonymous `user_id` (`anon-<hash>`).
 
-### Long-term Memory Bank (A3)
-
-`f1_agent/memory_bank.py` integrates Vertex Memory Bank with conservative defaults:
-
-- **Gate**: `F1_MEMORY_BANK_ENABLED`
-- **Inject**: before-model retrieval by `user_id` scope (cross-session)
-- **Generate**: after-model trigger using current session context metadata
-- **Safety default**: `F1_MEMORY_BANK_GENERATE_ON_CORRECTION_ONLY=true`
-
-This means v1 generates memory only when the user explicitly corrects the agent,
-reducing noise and hallucination risk while still learning persistent preferences/facts.
-
 ### SQL Templates
 
 `f1_agent/sql_templates.py` provides 15 pre-built parameterized queries:
@@ -315,11 +294,9 @@ uv run python -m unittest tests.test_fine_tuning -v
 | `test_fine_tuning.py` | 13 | Schema building, JSONL format, dataset generation |
 | `test_agent_tool_contract.py` | 4 | Tool registration, prompt loading |
 | `test_model_error_callback.py` | 4 | Rate limit handling (429/503) |
-| `test_search_alias.py` | 3 | Compatibility alias fallback |
 | `test_artifact_path_resolution.py` | 4 | Flat vs nested artifact layouts |
 | `test_temporal_context.py` | 20+ | Dynamic year injection, temporal resolution and cache bypass |
 | `test_sessions_contract.py` | 9 | Anonymous identity, TTL helpers, session service selection |
-| `test_memory_bank.py` | 6+ | Long-term memory retrieval/generation and callback integration |
 | `test_rag_backend.py` | 3 | A4 backend routing and local fallback behavior |
 
 ## Linting
@@ -464,7 +441,7 @@ For local development, keep `F1_TUNED_MODEL` unset so routing falls back to
 | `f1_agent/rag_vertex.py` | Vertex RAG adapter (`auto|local|vertex`) |
 | `f1_agent/db.py` | SQLite DB: schema builder (from Kaggle CSVs), read-only query execution |
 | `f1_agent/sql_templates.py` | 15 parameterized SQL templates for common F1 queries |
-| `f1_agent/prompts/system_instruction.txt` | Externalized system prompt with few-shot examples |
+| `f1_agent/prompts/system_instruction_static.txt` | Externalized system prompt with few-shot examples |
 | `deployment/deploy.py` | Vertex AI Agent Engine deploy/update script |
 | `deployment/rag_engine_ingest.py` | Creates/imports Vertex RAG corpus from GCS PDFs |
 | `build_index.py` | Generates `vector_store/` and `f1_data/` from source data in `docs/` |
