@@ -10,6 +10,7 @@ dependencies = [
     "langchain-google-genai",
     "langchain-community",
     "faiss-cpu",
+    "pandas>=2.2.0",
     "python-decouple>=3.8",
     "pymupdf>=1.27.2.2",
     "rich>=14.3.3",

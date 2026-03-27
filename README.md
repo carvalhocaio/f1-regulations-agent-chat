@@ -313,7 +313,7 @@ The SQLite DB contains 14 tables with the following row counts:
 ## Deployment and CI/CD
 
 - **CI** (`.github/workflows/ci.yml`): Runs on PRs — ruff check, format check, unit tests
-- **Deploy** (`.github/workflows/deploy.yml`): Runs on push to `main` — downloads artifacts, deploys to Agent Engine
+- **Deploy** (`.github/workflows/deploy.yml`): Runs on push to `main` with 3 stages — deploy candidate, run Gen AI Evaluation gate (dataset + rubric metrics), then promote to production only when gate passes
 
 For complete production setup (GCP, Terraform, secrets, manual deploy, smoke test):
 - See [DEPLOY.md](./DEPLOY.md)
