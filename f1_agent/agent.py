@@ -10,6 +10,7 @@ from google.adk.tools.google_search_tool import GoogleSearchTool
 from google.genai import types
 
 from f1_agent.callbacks import (
+    apply_grounding_policy,
     apply_response_contract,
     apply_throughput_request_type,
     check_cache,
@@ -23,6 +24,7 @@ from f1_agent.callbacks import (
     route_model,
     store_cache,
     sync_memory_bank,
+    validate_grounding_outcome,
     validate_structured_response,
 )
 from f1_agent.code_execution import run_analytical_code
@@ -155,12 +157,14 @@ root_agent = Agent(
         inject_dynamic_examples,
         route_model,
         apply_throughput_request_type,
+        apply_grounding_policy,
         apply_response_contract,
         preflight_token_check,
     ],
     after_model_callback=[
         log_context_cache_metrics,
         validate_structured_response,
+        validate_grounding_outcome,
         detect_corrections,
         sync_memory_bank,
         store_cache,

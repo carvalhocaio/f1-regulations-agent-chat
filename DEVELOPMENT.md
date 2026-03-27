@@ -100,6 +100,9 @@ Opens the ADK web UI at `http://localhost:8000`.
 | `F1_TOOL_METRICS_EXPORT_ENABLED` | No | `false` | Export tool validation errors as custom Cloud Monitoring metric |
 | `F1_TOOL_METRICS_PROJECT_ID` | No | — | Project id used when exporting tool validation metrics (fallbacks: `GOOGLE_CLOUD_PROJECT`, `F1_RAG_PROJECT_ID`) |
 | `F1_VERTEX_LLM_REQUEST_TYPE` | No | `shared` | Vertex Gemini throughput route: `shared` (DSQ) or `dedicated` (Provisioned Throughput) |
+| `F1_GROUNDING_POLICY_ENABLED` | No | `true` | Enables grounding policy callback for factual-critical routes |
+| `F1_GROUNDING_POLICY_MODE` | No | `observe` | Grounding validation mode: `observe` (log only) or `enforce` (fallback on missing evidence) |
+| `F1_GROUNDING_TIME_SENSITIVE_SOURCE` | No | `google` | Source used for time-sensitive grounding policy (Phase 1 currently supports `google`) |
 | `F1_SEMANTIC_CACHE_SIMILARITY_THRESHOLD` | No | `0.92` | Minimum cosine similarity (via normalized inner product) for cache hit |
 | `F1_SEMANTIC_CACHE_TOP_K` | No | `8` | ANN candidate count per cache lookup |
 | `F1_SEMANTIC_CACHE_HNSW_M` | No | `32` | HNSW graph degree parameter |

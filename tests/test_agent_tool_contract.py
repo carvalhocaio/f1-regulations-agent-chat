@@ -81,6 +81,10 @@ class AgentToolContractTests(unittest.TestCase):
         )
         self.assertLess(
             callback_names.index("apply_throughput_request_type"),
+            callback_names.index("apply_grounding_policy"),
+        )
+        self.assertLess(
+            callback_names.index("apply_grounding_policy"),
             callback_names.index("apply_response_contract"),
         )
         self.assertLess(
@@ -92,10 +96,15 @@ class AgentToolContractTests(unittest.TestCase):
         callback_names = [cb.__name__ for cb in root_agent.after_model_callback]
 
         self.assertIn("validate_structured_response", callback_names)
+        self.assertIn("validate_grounding_outcome", callback_names)
         self.assertIn("sync_memory_bank", callback_names)
         self.assertLess(
             callback_names.index("log_context_cache_metrics"),
             callback_names.index("validate_structured_response"),
+        )
+        self.assertLess(
+            callback_names.index("validate_structured_response"),
+            callback_names.index("validate_grounding_outcome"),
         )
         self.assertLess(
             callback_names.index("detect_corrections"),
