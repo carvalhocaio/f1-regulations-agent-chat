@@ -32,6 +32,7 @@ from f1_agent.memory_bank import (
 from f1_agent.memory_bank import (
     load_settings as load_memory_bank_settings,
 )
+from f1_agent.token_preflight import check_and_truncate as _check_and_truncate
 
 logger = logging.getLogger(__name__)
 
@@ -759,4 +760,27 @@ def log_context_cache_metrics(callback_context, llm_response):
             cached / total,
         )
 
+    return None
+
+
+def preflight_token_check(callback_context, llm_request):
+    """Before-model callback: count tokens and truncate if over budget.
+
+    Runs as the **last** before-model callback, after all context injection
+    and model routing.  Calls the Gemini CountTokens API to verify the
+    request fits within the configured threshold.  If it exceeds the limit,
+    progressively removes injected context blocks (examples → memories →
+    corrections → temporal) until the request is within budget.
+
+    Gracefully degrades: if CountTokens fails, logs a warning and proceeds
+    without truncation.
+    """
+    del callback_context  # unused
+    try:
+        _check_and_truncate(llm_request)
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "preflight_token_check failed — proceeding without truncation",
+            exc_info=True,
+        )
     return None

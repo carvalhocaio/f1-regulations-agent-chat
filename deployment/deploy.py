@@ -352,6 +352,25 @@ def main():
         default=500,
         help="Max row-like items accepted by analytical payload validators",
     )
+    # ── Token Preflight (CountTokens pre-call check) ──
+    parser.add_argument(
+        "--preflight-token-check-enabled",
+        action="store_true",
+        default=False,
+        help="Enable CountTokens preflight check before each model call",
+    )
+    parser.add_argument(
+        "--preflight-token-threshold",
+        type=float,
+        default=0.80,
+        help="Fraction of context window that triggers truncation (0.0-1.0)",
+    )
+    parser.add_argument(
+        "--preflight-token-hard-limit",
+        type=int,
+        default=0,
+        help="Absolute token cap (0 = use fraction of context window)",
+    )
     # ── Context Cache (Gemini native prompt caching) ──
     parser.add_argument(
         "--context-cache-enabled",
@@ -435,6 +454,14 @@ def main():
             max(300, args.code_execution_sandbox_ttl_seconds)
         ),
         "F1_CODE_EXECUTION_MAX_ROWS": str(max(10, args.code_execution_max_rows)),
+        # Token Preflight (CountTokens pre-call check)
+        "F1_PREFLIGHT_TOKEN_CHECK_ENABLED": "true"
+        if args.preflight_token_check_enabled
+        else "false",
+        "F1_PREFLIGHT_TOKEN_THRESHOLD": str(
+            max(0.0, min(1.0, args.preflight_token_threshold))
+        ),
+        "F1_PREFLIGHT_TOKEN_HARD_LIMIT": str(max(0, args.preflight_token_hard_limit)),
         # Context Cache (Gemini native prompt caching via ADK ContextCacheConfig)
         "F1_CONTEXT_CACHE_ENABLED": "true" if args.context_cache_enabled else "false",
         "F1_CONTEXT_CACHE_INTERVALS": str(max(1, args.context_cache_intervals)),
