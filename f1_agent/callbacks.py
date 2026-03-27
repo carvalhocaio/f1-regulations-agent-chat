@@ -492,21 +492,13 @@ def check_cache(callback_context, llm_request):
         )
         return None
 
-    if hasattr(cache, "lookup"):
-        result = cache.lookup(user_text)
-        hit = result.answer
-        outcome = result.outcome
-        lookup_ms = result.lookup_ms
-        candidates = result.candidates_scanned
-        top1 = result.similarity_top1 if result.similarity_top1 is not None else -1.0
-        evicted = result.evicted_count
-    else:
-        hit = cache.get(user_text)
-        outcome = "hit" if hit is not None else "miss"
-        lookup_ms = 0.0
-        candidates = 0
-        top1 = -1.0
-        evicted = 0
+    result = cache.lookup(user_text)
+    hit = result.answer
+    outcome = result.outcome
+    lookup_ms = result.lookup_ms
+    candidates = result.candidates_scanned
+    top1 = result.similarity_top1 if result.similarity_top1 is not None else -1.0
+    evicted = result.evicted_count
 
     logger.info(
         "semantic_cache | query_type=%s outcome=%s lookup_ms=%.2f "

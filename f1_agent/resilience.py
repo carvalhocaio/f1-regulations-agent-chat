@@ -7,7 +7,6 @@ critical remote tools (RAG/search/memory/example retrieval).
 from __future__ import annotations
 
 import logging
-import os
 import random
 import re
 import threading
@@ -15,6 +14,8 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+
+from f1_agent.env_utils import env_bool, env_float, env_int
 
 logger = logging.getLogger(__name__)
 
@@ -99,20 +100,20 @@ _breaker_registry: dict[str, CircuitBreaker] = {}
 
 def load_retry_settings() -> RetrySettings:
     return RetrySettings(
-        enabled=_env_bool("F1_RETRY_ENABLED", True),
-        max_attempts=max(1, _env_int("F1_RETRY_MAX_ATTEMPTS", 3)),
-        initial_delay_seconds=max(0.0, _env_float("F1_RETRY_INITIAL_DELAY_S", 0.4)),
-        max_delay_seconds=max(0.1, _env_float("F1_RETRY_MAX_DELAY_S", 4.0)),
-        exp_base=max(1.1, _env_float("F1_RETRY_EXP_BASE", 2.0)),
-        jitter=max(0.0, _env_float("F1_RETRY_JITTER", 0.35)),
+        enabled=env_bool("F1_RETRY_ENABLED", True),
+        max_attempts=max(1, env_int("F1_RETRY_MAX_ATTEMPTS", 3)),
+        initial_delay_seconds=max(0.0, env_float("F1_RETRY_INITIAL_DELAY_S", 0.4)),
+        max_delay_seconds=max(0.1, env_float("F1_RETRY_MAX_DELAY_S", 4.0)),
+        exp_base=max(1.1, env_float("F1_RETRY_EXP_BASE", 2.0)),
+        jitter=max(0.0, env_float("F1_RETRY_JITTER", 0.35)),
     )
 
 
 def load_circuit_settings() -> CircuitBreakerSettings:
     return CircuitBreakerSettings(
-        enabled=_env_bool("F1_CIRCUIT_ENABLED", True),
-        failure_threshold=max(1, _env_int("F1_CIRCUIT_FAILURE_THRESHOLD", 5)),
-        open_seconds=max(1.0, _env_float("F1_CIRCUIT_OPEN_SECONDS", 20.0)),
+        enabled=env_bool("F1_CIRCUIT_ENABLED", True),
+        failure_threshold=max(1, env_int("F1_CIRCUIT_FAILURE_THRESHOLD", 5)),
+        open_seconds=max(1.0, env_float("F1_CIRCUIT_OPEN_SECONDS", 20.0)),
     )
 
 
@@ -316,28 +317,3 @@ def _get_breaker(
         return breaker
 
 
-def _env_bool(name: str, default: bool) -> bool:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return int(raw.strip())
-    except (TypeError, ValueError):
-        return default
-
-
-def _env_float(name: str, default: float) -> float:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return float(raw.strip())
-    except (TypeError, ValueError):
-        return default

@@ -111,9 +111,6 @@ def build_agent_connection_factory(
     return _fallback_factory
 
 
-# Backward-compatible alias used by current scripts.
-build_live_connection_factory = build_agent_connection_factory
-
 
 @dataclass
 class _ActiveTurn:

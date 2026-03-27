@@ -12,42 +12,12 @@ Disabled by default — enable via ``F1_PREFLIGHT_TOKEN_CHECK_ENABLED=true``.
 from __future__ import annotations
 
 import logging
-import os
+import threading
 from dataclasses import dataclass, field
 
+from f1_agent.env_utils import env_bool, env_float, env_int
+
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Env-var helpers (same pattern used across the project)
-# ---------------------------------------------------------------------------
-
-
-def _env_bool(name: str, default: bool) -> bool:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _env_float(name: str, default: float) -> float:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return float(raw.strip())
-    except (TypeError, ValueError):
-        return default
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return int(raw.strip())
-    except (TypeError, ValueError):
-        return default
-
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -74,15 +44,19 @@ _INJECTED_HEADERS: list[tuple[str, str]] = [
 # ---------------------------------------------------------------------------
 
 _client = None
+_client_lock = threading.Lock()
 
 
 def _get_client():
-    """Return a shared ``genai.Client``, created on first use."""
+    """Return a shared ``genai.Client``, created on first use (thread-safe)."""
     global _client
-    if _client is None:
-        from google import genai  # noqa: PLC0415
+    if _client is not None:
+        return _client
+    with _client_lock:
+        if _client is None:
+            from google import genai  # noqa: PLC0415
 
-        _client = genai.Client()
+            _client = genai.Client()
     return _client
 
 
@@ -207,15 +181,15 @@ def check_and_truncate(llm_request) -> PreflightResult | None:
     Returns a ``PreflightResult`` describing what happened, or ``None`` if
     the feature is disabled.
     """
-    if not _env_bool("F1_PREFLIGHT_TOKEN_CHECK_ENABLED", False):
+    if not env_bool("F1_PREFLIGHT_TOKEN_CHECK_ENABLED", False):
         return None
 
     model = getattr(llm_request, "model", None) or _DEFAULT_MODEL
     # Normalise Gemini model wrapper to string
     model_str = getattr(model, "model", None) or str(model)
 
-    threshold_fraction = _env_float("F1_PREFLIGHT_TOKEN_THRESHOLD", 0.80)
-    hard_limit = _env_int("F1_PREFLIGHT_TOKEN_HARD_LIMIT", 0)
+    threshold_fraction = env_float("F1_PREFLIGHT_TOKEN_THRESHOLD", 0.80)
+    hard_limit = env_int("F1_PREFLIGHT_TOKEN_HARD_LIMIT", 0)
     threshold = _compute_threshold(model_str, threshold_fraction, hard_limit)
 
     # Extract system instruction text if present.

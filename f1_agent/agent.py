@@ -1,4 +1,3 @@
-import os
 from datetime import datetime
 from pathlib import Path
 
@@ -25,6 +24,7 @@ from f1_agent.callbacks import (
     sync_memory_bank,
 )
 from f1_agent.code_execution import run_analytical_code
+from f1_agent.env_utils import env_bool, env_float, env_int
 from f1_agent.resilience import is_quota_or_unavailable_error
 from f1_agent.tools import (
     query_f1_history,
@@ -116,43 +116,16 @@ def handle_rate_limit(
     return None
 
 
-def _env_bool(name: str, default: bool) -> bool:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return int(raw.strip())
-    except (TypeError, ValueError):
-        return default
-
-
-def _env_float(name: str, default: float) -> float:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return float(raw.strip())
-    except (TypeError, ValueError):
-        return default
-
-
 def _build_model():
-    if not _env_bool("F1_LLM_RETRY_ENABLED", True):
+    if not env_bool("F1_LLM_RETRY_ENABLED", True):
         return "gemini-2.5-pro"
 
     retry_options = types.HttpRetryOptions(
-        initial_delay=max(0.0, _env_float("F1_LLM_RETRY_INITIAL_DELAY_S", 1.0)),
-        attempts=max(1, _env_int("F1_LLM_RETRY_ATTEMPTS", 3)),
-        exp_base=max(1.1, _env_float("F1_LLM_RETRY_EXP_BASE", 2.0)),
-        max_delay=max(0.1, _env_float("F1_LLM_RETRY_MAX_DELAY_S", 8.0)),
-        jitter=max(0.0, _env_float("F1_LLM_RETRY_JITTER", 0.35)),
+        initial_delay=max(0.0, env_float("F1_LLM_RETRY_INITIAL_DELAY_S", 1.0)),
+        attempts=max(1, env_int("F1_LLM_RETRY_ATTEMPTS", 3)),
+        exp_base=max(1.1, env_float("F1_LLM_RETRY_EXP_BASE", 2.0)),
+        max_delay=max(0.1, env_float("F1_LLM_RETRY_MAX_DELAY_S", 8.0)),
+        jitter=max(0.0, env_float("F1_LLM_RETRY_JITTER", 0.35)),
         http_status_codes=[408, 429, 500, 502, 503, 504],
     )
     return Gemini(model="gemini-2.5-pro", retry_options=retry_options)
@@ -203,11 +176,11 @@ def build_app() -> App:
     conversation history prefix.
     """
     cache_config = None
-    if _env_bool("F1_CONTEXT_CACHE_ENABLED", False):
+    if env_bool("F1_CONTEXT_CACHE_ENABLED", False):
         cache_config = ContextCacheConfig(
-            cache_intervals=_env_int("F1_CONTEXT_CACHE_INTERVALS", 10),
-            ttl_seconds=_env_int("F1_CONTEXT_CACHE_TTL", 1800),
-            min_tokens=_env_int("F1_CONTEXT_CACHE_MIN_TOKENS", 4096),
+            cache_intervals=env_int("F1_CONTEXT_CACHE_INTERVALS", 10),
+            ttl_seconds=env_int("F1_CONTEXT_CACHE_TTL", 1800),
+            min_tokens=env_int("F1_CONTEXT_CACHE_MIN_TOKENS", 4096),
         )
     return App(
         name="f1_regulations_assistant",
