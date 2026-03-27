@@ -94,8 +94,9 @@ class MemoryBankCallbackTests(unittest.TestCase):
 
         inject_long_term_memories(ctx, req)
 
-        self.assertEqual(len(req.instructions), 1)
-        self.assertIn("Long-term user memory", req.instructions[0])
+        # Memories are now injected as user content (not system instruction)
+        self.assertEqual(len(req.contents), 1)
+        self.assertIn("Long-term user memory", req.contents[0].parts[0].text)
 
     @patch.dict(os.environ, {"F1_MEMORY_BANK_ENABLED": "true"}, clear=False)
     @patch("f1_agent.callbacks.generate_memories_from_session")

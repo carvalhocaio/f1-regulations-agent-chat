@@ -71,12 +71,16 @@ Opens the ADK web UI at `http://localhost:8000`.
 | `GOOGLE_API_KEY` | Yes | — | Gemini API key for LLM and embeddings |
 | `GEMINI_EMBEDDING_MODEL` | No | `models/gemini-embedding-2-preview` | Embedding model for RAG and cache |
 | `F1_TUNED_MODEL` | No | `gemini-2.5-flash` | Fine-tuned model endpoint (**production only** — see [Fine-Tuning](#fine-tuning-production-only)) |
-| `F1_RAG_BACKEND` | No | `auto` | Regulations retrieval backend: `auto`, `local`, or `vertex` |
+| `F1_RAG_BACKEND` | No | `auto` | Regulations retrieval backend: `auto`, `local`, `vertex`, or `vector_search` |
 | `F1_RAG_CORPUS` | No | — | Vertex RAG corpus resource name (required when Vertex retrieval is used) |
 | `F1_RAG_PROJECT_ID` | No | — | Explicit project for Vertex RAG client initialization |
 | `F1_RAG_LOCATION` | No | — | Explicit location for Vertex RAG client initialization |
 | `F1_RAG_TOP_K` | No | `5` | Top-k retrieved chunks for Vertex RAG |
 | `F1_RAG_VECTOR_DISTANCE_THRESHOLD` | No | — | Optional retrieval distance threshold for Vertex RAG |
+| `F1_VECTOR_SEARCH_PARENT` | No | — | Vector Search collection path (`projects/.../locations/.../collections/...`) |
+| `F1_VECTOR_SEARCH_FIELD` | No | `embedding` | Vector field searched by Vertex Vector Search |
+| `F1_VECTOR_SEARCH_TOP_K` | No | `5` | Top-k retrieved chunks for Vector Search backend |
+| `F1_VECTOR_SEARCH_OUTPUT_FIELDS` | No | `data_fields,metadata_fields` | Output fields requested from Vector Search response |
 | `F1_EXAMPLE_STORE_ENABLED` | No | `false` | Enables dynamic few-shot retrieval from Example Store |
 | `F1_EXAMPLE_STORE_NAME` | No | — | Example Store resource name: `projects/.../locations/.../exampleStores/...` |
 | `F1_EXAMPLE_STORE_TOP_K` | No | `3` | Number of candidate examples retrieved per request |
@@ -93,6 +97,14 @@ Opens the ADK web UI at `http://localhost:8000`.
 | `F1_CODE_EXECUTION_AGENT_ENGINE_NAME` | No | — | Agent Engine resource used as parent for sandbox operations |
 | `F1_CODE_EXECUTION_SANDBOX_TTL_SECONDS` | No | `3600` | TTL for sandbox lifecycle in seconds |
 | `F1_CODE_EXECUTION_MAX_ROWS` | No | `500` | Max list size accepted by analytical payload validators |
+| `F1_VERTEX_LLM_REQUEST_TYPE` | No | `shared` | Vertex Gemini throughput route: `shared` (DSQ) or `dedicated` (Provisioned Throughput) |
+| `F1_SEMANTIC_CACHE_SIMILARITY_THRESHOLD` | No | `0.92` | Minimum cosine similarity (via normalized inner product) for cache hit |
+| `F1_SEMANTIC_CACHE_TOP_K` | No | `8` | ANN candidate count per cache lookup |
+| `F1_SEMANTIC_CACHE_HNSW_M` | No | `32` | HNSW graph degree parameter |
+| `F1_SEMANTIC_CACHE_HNSW_EF_SEARCH` | No | `64` | HNSW search breadth/recall parameter |
+| `F1_SEMANTIC_CACHE_SWEEP_INTERVAL_S` | No | `600` | Periodic sweep interval (seconds) for expiry/pruning |
+| `F1_SEMANTIC_CACHE_SWEEP_EVERY_OPS` | No | `500` | Operation-count trigger for expiry/pruning sweep |
+| `F1_SEMANTIC_CACHE_MAX_ENTRIES` | No | `50000` | Max rows in semantic cache before low-priority pruning |
 
 ## Generated Artifacts
 
@@ -118,6 +130,7 @@ Before model:
   4. inject_long_term_memories — Inject relevant cross-session memories (A3)
   5. inject_dynamic_examples — Retrieve real-error few-shots from Example Store
   6. route_model      — Route to Flash/tuned (simple) or Pro (complex)
+  7. apply_throughput_request_type — Set `X-Vertex-AI-LLM-Request-Type` (`shared|dedicated`)
 
 After model:
   7. detect_corrections — Detect if the user corrected the agent (PT/EN)
@@ -125,7 +138,11 @@ After model:
   9. store_cache      — Cache the answer (TTL: 30 days static, 24h web)
 
 On error:
-  10. handle_rate_limit — User-friendly message for 429/503 errors
+  10. handle_rate_limit — User-friendly fallback after retry exhaustion (429/503)
+
+Runtime resilience layer:
+  - LLM runtime retries via Gemini `HttpRetryOptions` (exponential backoff + jitter)
+  - Tool/search retries + circuit breaker via `f1_agent.resilience`
 ```
 
 ### Model Routing
@@ -143,8 +160,9 @@ Classification patterns for complex queries: comparisons (`vs`, `compare`, `dife
 
 - **Embedding model**: `GEMINI_EMBEDDING_MODEL` (default: `models/gemini-embedding-2-preview`)
 - **Similarity threshold**: 0.92 (cosine)
-- **Storage**: FAISS (in-memory vectors) + SQLite (answers, metadata, hit counts)
+- **Storage**: FAISS HNSW ANN (in-memory index) + SQLite (source of truth for answers/metadata)
 - **TTL**: 30 days for historical/regulation data, 24 hours for web-sourced answers
+- **Governance**: periodic sweep of expired rows + max entry cap with low-priority pruning
 - **Freshness guard**: Questions that require live/post-2024 data bypass cache and force fresh tool calls
 - **Location**: `f1_cache/` directory (created at runtime, gitignored)
 
@@ -164,9 +182,14 @@ Chunking is article-aware: separators prioritize `Article X.Y` boundaries, and a
 
 - `F1_RAG_BACKEND=local` — always use local FAISS+BM25 (`f1_agent/rag.py`)
 - `F1_RAG_BACKEND=vertex` — try Vertex RAG first; fallback to local if retrieval fails/returns empty
-- `F1_RAG_BACKEND=auto` (default) — prefer Vertex when configured, with automatic local fallback
+- `F1_RAG_BACKEND=vector_search` — try Vertex Vector Search first; fallback to local if empty/unavailable
+- `F1_RAG_BACKEND=auto` (default) — try Vector Search, then Vertex RAG, then local fallback
 
-The Vertex adapter lives in `f1_agent/rag_vertex.py` and normalizes results to the same response shape used by existing tool consumers.
+Adapters:
+- `f1_agent/rag_vertex.py` for Vertex RAG
+- `f1_agent/rag_vector_search.py` for Vertex Vector Search
+
+Both adapters normalize results to the same `Document` shape used by tool consumers.
 
 ### Session Corrections
 

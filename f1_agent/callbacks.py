@@ -32,10 +32,30 @@ from f1_agent.memory_bank import (
 from f1_agent.memory_bank import (
     load_settings as load_memory_bank_settings,
 )
+from f1_agent.token_preflight import check_and_truncate as _check_and_truncate
 
 logger = logging.getLogger(__name__)
 
 _DB_MAX_YEAR = 2024
+_DEFAULT_VERTEX_REQUEST_TYPE = "shared"
+_VALID_VERTEX_REQUEST_TYPES = {"shared", "dedicated"}
+
+
+def _prepend_user_context(llm_request, text: str) -> None:
+    """Insert dynamic context as a user content at the start of contents.
+
+    By placing dynamic per-request information (temporal context, corrections,
+    memories, examples) in user content instead of system_instruction, we keep
+    the system instruction stable across requests.  This enables Gemini context
+    caching — both implicit (automatic prefix dedup) and explicit (via ADK
+    ContextCacheConfig) — since the cache fingerprint depends on a stable
+    system_instruction.
+    """
+    llm_request.contents.insert(
+        0,
+        types.Content(role="user", parts=[types.Part(text=text)]),
+    )
+
 
 # ── Model routing ───────────────────────────────────────────────────────
 
@@ -162,6 +182,23 @@ def _query_requires_web_data(text: str) -> bool:
 
     # Relative temporal expressions likely resolve to post-2024 seasons
     return any(p.search(text) for p in _RELATIVE_TEMPORAL_RE)
+
+
+_HISTORICAL_HINT_RE = re.compile(
+    r"\b(19|20)\d{2}\b|\b(histor|regulament|regulation|seasons?|championship)\b",
+    re.I,
+)
+
+
+def _classify_cache_query(text: str) -> str:
+    """Classify query type for semantic cache effectiveness metrics."""
+    if _query_requires_web_data(text):
+        return "time_sensitive"
+    if _is_complex_question(text):
+        return "complex"
+    if _HISTORICAL_HINT_RE.search(text):
+        return "historical"
+    return "simple"
 
 
 def _runtime_temporal_addendum() -> str:
@@ -374,6 +411,45 @@ def route_model(callback_context, llm_request):
     return None
 
 
+def _resolve_vertex_request_type() -> str:
+    raw = os.environ.get("F1_VERTEX_LLM_REQUEST_TYPE", _DEFAULT_VERTEX_REQUEST_TYPE)
+    value = str(raw).strip().lower()
+    if value in _VALID_VERTEX_REQUEST_TYPES:
+        return value
+
+    logger.warning(
+        "Invalid F1_VERTEX_LLM_REQUEST_TYPE=%r; falling back to %s",
+        raw,
+        _DEFAULT_VERTEX_REQUEST_TYPE,
+    )
+    return _DEFAULT_VERTEX_REQUEST_TYPE
+
+
+def apply_throughput_request_type(callback_context, llm_request):
+    """Before-model callback: route request as shared or dedicated throughput.
+
+    Uses Vertex header ``X-Vertex-AI-LLM-Request-Type``:
+    - ``shared`` -> Dynamic Shared Quota (pay-as-you-go)
+    - ``dedicated`` -> Provisioned Throughput
+    """
+    del callback_context  # unused
+
+    request_type = _resolve_vertex_request_type()
+    if not llm_request.config:
+        llm_request.config = types.GenerateContentConfig()
+    if not llm_request.config.http_options:
+        llm_request.config.http_options = types.HttpOptions()
+
+    headers = dict(llm_request.config.http_options.headers or {})
+    headers["X-Vertex-AI-LLM-Request-Type"] = request_type
+    llm_request.config.http_options.headers = headers
+
+    logger.info(
+        "throughput_route | request_type=%s model=%s", request_type, llm_request.model
+    )
+    return None
+
+
 # ── Semantic cache ──────────────────────────────────────────────────────
 
 # Lazy singleton — created on first use
@@ -405,11 +481,36 @@ def check_cache(callback_context, llm_request):
     if not user_text:
         return None
 
+    query_type = _classify_cache_query(user_text)
+
     # Time-sensitive queries should prefer fresh tool calls.
     if _query_requires_web_data(user_text):
+        logger.info(
+            "semantic_cache | query_type=%s outcome=bypass lookup_ms=0.00 "
+            "candidates=0 top1=-1.0000 evicted=0",
+            query_type,
+        )
         return None
 
-    hit = cache.get(user_text)
+    result = cache.lookup(user_text)
+    hit = result.answer
+    outcome = result.outcome
+    lookup_ms = result.lookup_ms
+    candidates = result.candidates_scanned
+    top1 = result.similarity_top1 if result.similarity_top1 is not None else -1.0
+    evicted = result.evicted_count
+
+    logger.info(
+        "semantic_cache | query_type=%s outcome=%s lookup_ms=%.2f "
+        "candidates=%d top1=%.4f evicted=%d",
+        query_type,
+        outcome,
+        lookup_ms,
+        candidates,
+        top1,
+        evicted,
+    )
+
     if hit is None:
         return None
 
@@ -579,8 +680,9 @@ def inject_corrections(callback_context, llm_request):
     """Before-model callback: inject stored corrections into the prompt.
 
     If the user has previously corrected the agent in this session,
-    append those corrections to the system instruction so the model
-    is aware of them and doesn't repeat the same mistakes.
+    prepend those corrections as user content so the model is aware of
+    them without mutating the system instruction (preserving cache
+    fingerprint stability).
     """
     corrections = _get_corrections(callback_context)
     if not corrections:
@@ -588,13 +690,13 @@ def inject_corrections(callback_context, llm_request):
 
     corrections_text = "\n".join(f"- {c}" for c in corrections)
     addendum = (
-        "\n\n## User corrections from this session\n"
+        "## User corrections from this session\n"
         "The user has corrected you on the following points. "
         "Take these into account and do NOT repeat the same mistakes:\n"
         f"{corrections_text}"
     )
 
-    llm_request.append_instructions([addendum])
+    _prepend_user_context(llm_request, addendum)
     logger.debug("Injected %d corrections into prompt", len(corrections))
     return None
 
@@ -611,7 +713,7 @@ def inject_dynamic_examples(callback_context, llm_request):
         )
         return None
 
-    llm_request.append_instructions([addendum])
+    _prepend_user_context(llm_request, addendum)
     logger.info(
         "Injected dynamic examples: count=%s top_similarity=%s",
         metadata.get("example_count"),
@@ -636,21 +738,25 @@ def inject_long_term_memories(callback_context, llm_request):
         )
         return None
 
-    llm_request.append_instructions([addendum])
+    _prepend_user_context(llm_request, addendum)
     logger.info("Injected long-term memories: count=%s", metadata.get("memory_count"))
     return None
 
 
 def inject_runtime_temporal_context(callback_context, llm_request):
-    """Before-model callback: inject dynamic date/year guidance every request."""
-    addenda = [_runtime_temporal_addendum()]
+    """Before-model callback: inject dynamic date/year guidance every request.
+
+    Inserts temporal context as user content to keep the system instruction
+    stable for context caching.
+    """
+    parts = [_runtime_temporal_addendum()]
 
     user_text = _extract_user_text(callback_context, llm_request)
     resolution = _resolve_temporal_references(user_text)
     if resolution:
-        addenda.append(resolution)
+        parts.append(resolution)
 
-    llm_request.append_instructions(addenda)
+    _prepend_user_context(llm_request, "\n\n".join(parts))
     return None
 
 
@@ -709,4 +815,56 @@ def sync_memory_bank(callback_context, llm_response):
     if generated:
         logger.info("Triggered memory generation for session: %s", session_name)
 
+    return None
+
+
+def log_context_cache_metrics(callback_context, llm_response):
+    """After-model callback: log Gemini context cache token metrics.
+
+    Inspects ``usage_metadata`` on the response to report how many prompt
+    tokens were served from cache vs total, enabling monitoring of cache
+    effectiveness.
+    """
+    del callback_context  # unused
+    if not llm_response:
+        return None
+
+    usage = getattr(llm_response, "usage_metadata", None)
+    if not usage:
+        return None
+
+    cached = getattr(usage, "cached_content_token_count", 0) or 0
+    total = getattr(usage, "prompt_token_count", 0) or 0
+
+    if total > 0:
+        logger.info(
+            "context_cache | prompt_tokens=%d cached_tokens=%d ratio=%.2f",
+            total,
+            cached,
+            cached / total,
+        )
+
+    return None
+
+
+def preflight_token_check(callback_context, llm_request):
+    """Before-model callback: count tokens and truncate if over budget.
+
+    Runs as the **last** before-model callback, after all context injection
+    and model routing.  Calls the Gemini CountTokens API to verify the
+    request fits within the configured threshold.  If it exceeds the limit,
+    progressively removes injected context blocks (examples → memories →
+    corrections → temporal) until the request is within budget.
+
+    Gracefully degrades: if CountTokens fails, logs a warning and proceeds
+    without truncation.
+    """
+    del callback_context  # unused
+    try:
+        _check_and_truncate(llm_request)
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "preflight_token_check failed — proceeding without truncation",
+            exc_info=True,
+        )
     return None

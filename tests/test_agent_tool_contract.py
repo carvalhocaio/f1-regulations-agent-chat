@@ -5,25 +5,25 @@ from f1_agent.agent import root_agent
 
 class AgentToolContractTests(unittest.TestCase):
     def test_instruction_uses_google_search_agent_name(self):
-        instruction = root_agent.instruction
+        instruction = root_agent.static_instruction
 
         self.assertIn("google_search_agent", instruction)
         self.assertNotIn("**google_search**", instruction)
 
     def test_instruction_mentions_search_as_fallback(self):
-        instruction = root_agent.instruction
+        instruction = root_agent.static_instruction
 
         self.assertIn("search", instruction)
         self.assertIn("fallback", instruction.lower())
 
     def test_instruction_mentions_analytical_sandbox_tool(self):
-        instruction = root_agent.instruction
+        instruction = root_agent.static_instruction
 
         self.assertIn("run_analytical_code", instruction)
         self.assertIn("summary_stats", instruction)
 
     def test_instruction_loaded_from_template(self):
-        instruction = root_agent.instruction
+        instruction = root_agent.static_instruction
 
         # Should contain interpolated current year (not the placeholder)
         self.assertNotIn("{CURRENT_YEAR}", instruction)
@@ -47,13 +47,13 @@ class AgentToolContractTests(unittest.TestCase):
         self.assertIn("google_search", tool_names)
 
     def test_instruction_enforces_last_event_without_year_policy(self):
-        instruction = root_agent.instruction
+        instruction = root_agent.static_instruction
 
         self.assertIn("last completed edition", instruction)
         self.assertIn("DATE + YEAR", instruction)
 
     def test_instruction_enforces_preseason_leader_guard(self):
-        instruction = root_agent.instruction
+        instruction = root_agent.static_instruction
 
         self.assertIn("A temporada atual", instruction)
         self.assertIn("ainda não começou", instruction)

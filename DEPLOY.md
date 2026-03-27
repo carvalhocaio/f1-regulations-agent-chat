@@ -262,6 +262,10 @@ uv run python deployment/deploy.py \
   --staging-bucket $STAGING_BUCKET \
   --display-name "f1-agent" \
   --service-account $SA_EMAIL \
+  --min-instances 2 \
+  --max-instances 6 \
+  --container-concurrency 18 \
+  --vertex-llm-request-type shared \
   --rag-backend auto \
   --rag-corpus "projects/<PROJECT_NUMBER>/locations/europe-west4/ragCorpora/<RAG_CORPUS_ID>" \
   --rag-location "europe-west4" \
@@ -298,6 +302,121 @@ This smoke test now validates:
 - Sessions create/get/list/delete (managed)
 - TTL payload applied on session creation
 
+Optional bidi smoke test (P7 scaffolding):
+
+```fish
+uv run python deployment/smoke_bidi_agent_engine.py \
+  --project-id $PROJECT_ID \
+  --location $LOCATION \
+  --resource-name $RESOURCE_NAME \
+  --user-id "smoke-bidi-user" \
+  --message "Give me a one-line summary of Formula 1."
+```
+
+This command prints protocolized events (`turn_start`, `delta`, `turn_end`, `error`).
+
+Optional local WebSocket bridge (P7):
+
+```fish
+uv run python deployment/websocket_bidi_server.py \
+  --project-id $PROJECT_ID \
+  --location $LOCATION \
+  --resource-name $RESOURCE_NAME \
+  --host 0.0.0.0 \
+  --port 8001
+```
+
+WebSocket endpoint: `ws://localhost:8001/ws/chat`
+
+### 6.2) Load test (for scaling calibration)
+
+Use this script to compare p95 before and after scaling changes:
+
+```fish
+uv run python deployment/load_test_agent_engine.py \
+  --project-id $PROJECT_ID \
+  --location $LOCATION \
+  --resource-name $RESOURCE_NAME \
+  --total-requests 150 \
+  --concurrency 30 \
+  --user-pool-size 30 \
+  --warmup-requests 15
+```
+
+Suggested quick loop:
+1. Run once with current config (baseline).
+2. Increase `--min-instances` to reduce cold starts.
+3. Adjust `--container-concurrency` (multiples of 9) to absorb bursts.
+4. Keep `--max-instances` bounded for cost control.
+
+### 6.2.1) Streaming mode benchmark (P7)
+
+Use this benchmark to compare TTFT and turn latency across modes:
+
+```fish
+uv run python deployment/benchmark_streaming_modes.py \
+  --project-id $PROJECT_ID \
+  --location $LOCATION \
+  --resource-name $RESOURCE_NAME \
+  --modes "query,async_stream,bidi" \
+  --total-requests 30 \
+  --concurrency 5
+```
+
+The output includes per-mode `ttft_p50/p95` and `turn_p50/p95`.
+
+### 6.3) Semantic cache lookup benchmark (P5)
+
+Use this local benchmark to validate that cache-hit lookup stays stable as
+cache size grows and remains significantly below a brute-force O(N) scan.
+
+```fish
+uv run python deployment/benchmark_semantic_cache.py \
+  --sizes 500,2000,5000,10000 \
+  --lookups 600 \
+  --warmup 120
+```
+
+The script emits JSON with p50/p95/p99 for ANN lookup and a synthetic
+`vector_scan_*` O(N) baseline over vectors only.
+Track `ann_p95_ms` across sizes to confirm sublinear behavior.
+
+### 6.4) Retrieval backend benchmark (P8)
+
+Before benchmarking `vector_search`, bootstrap a collection and ingest chunks:
+
+```fish
+uv run python deployment/vector_search_bootstrap.py \
+  --project-id $PROJECT_ID \
+  --location us-central1 \
+  --collection-id f1-regulations-benchmark \
+  --max-docs 400
+```
+
+Then set:
+
+```fish
+set -x F1_VECTOR_SEARCH_PARENT "projects/$PROJECT_ID/locations/us-central1/collections/f1-regulations-benchmark"
+set -x F1_VECTOR_SEARCH_FIELD "embedding"
+```
+
+Use this benchmark to compare retrieval backends (`local`, `vertex`,
+`vector_search`) over the same query dataset:
+
+```fish
+uv run python deployment/benchmark_retrieval_backends.py \
+  --queries-file data/benchmarks/retrieval_queries.jsonl \
+  --backends "local,vertex,vector_search" \
+  --top-k 5 \
+  --concurrency 10
+```
+
+Each JSONL row should follow:
+
+```json
+{"query":"What is Article 5.2 about?","expected_ids":["gs://docs/section_a.pdf|12|5.2|..."]}
+```
+
 ---
 
 ## 7) CI/CD — GitHub Actions
@@ -319,6 +438,10 @@ Configure under **Settings > Secrets and variables > Actions**:
 | `GCP_MEMORY_BANK_AGENT_ENGINE_NAME` | `projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>` (optional, recommended when enabling A3) |
 | `GCP_CODE_EXECUTION_ENABLED` | `true` or `false` (optional; enables A6 rollout in deploy workflow) |
 | `GCP_CODE_EXECUTION_AGENT_ENGINE_NAME` | `projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>` (optional, recommended when enabling A6) |
+| `GCP_AGENT_MIN_INSTANCES` | Optional; defaults to `2` in workflow |
+| `GCP_AGENT_MAX_INSTANCES` | Optional; defaults to `6` in workflow |
+| `GCP_AGENT_CONTAINER_CONCURRENCY` | Optional; defaults to `18` in workflow (ADK async: prefer multiple of 9) |
+| `GCP_VERTEX_LLM_REQUEST_TYPE` | Optional; `shared` (DSQ, default) or `dedicated` (Provisioned Throughput) |
 
 > **Recommended**: Use [Workload Identity Federation](https://github.com/google-github-actions/auth#workload-identity-federation) instead of SA key for keyless authentication.
 
@@ -362,6 +485,10 @@ uv run python deployment/deploy.py \
   --staging-bucket $STAGING_BUCKET \
   --display-name "f1-agent" \
   --service-account $SA_EMAIL \
+  --min-instances 2 \
+  --max-instances 6 \
+  --container-concurrency 18 \
+  --vertex-llm-request-type shared \
   --rag-backend auto \
   --rag-corpus "projects/<PROJECT_NUMBER>/locations/europe-west4/ragCorpora/<RAG_CORPUS_ID>" \
   --rag-location "europe-west4"
@@ -394,13 +521,14 @@ print("Deleted:", os.environ["RESOURCE_NAME"])
 - **Reserved variables**: Never set `GOOGLE_CLOUD_PROJECT` or `GOOGLE_APPLICATION_CREDENTIALS` as env vars in the deploy. Use `vertexai.Client(...)` with explicit `project` and `location`.
 - **Region**: Agent Engine must use the same region as the staging bucket.
 - **LLM model version**: Production uses `gemini-2.5-pro` for complex queries and the fine-tuned Flash endpoint (`F1_TUNED_MODEL`) for simple queries. Model routing is automatic via callbacks.
-- **RAG backend**: `F1_RAG_BACKEND=auto` is the recommended default. It prefers Vertex RAG when configured (`F1_RAG_CORPUS`) and falls back to local FAISS+BM25 for resilience.
+- **RAG backend**: `F1_RAG_BACKEND=auto` is the recommended default. It tries `vector_search`, then `vertex`, then local FAISS+BM25 fallback.
+- **Vector Search backend**: for `F1_RAG_BACKEND=vector_search`, set `F1_VECTOR_SEARCH_PARENT`; optional knobs: `F1_VECTOR_SEARCH_FIELD`, `F1_VECTOR_SEARCH_TOP_K`, `F1_VECTOR_SEARCH_OUTPUT_FIELDS`.
 - **RAG location**: `F1_RAG_LOCATION` can be different from Agent Engine region; use `europe-west4` (or `europe-west3`) when `us-central1` is allowlist-restricted.
 - **Example Store**: only enable dynamic few-shot when `F1_EXAMPLE_STORE_NAME` points to a valid store. Recommended region for Example Store is `us-central1`.
 - **Memory Bank**: enable only after Sessions are stable and `user_id` contract is enforced. Start with `F1_MEMORY_BANK_GENERATE_ON_CORRECTION_ONLY=true` to reduce noisy memories.
 - **Code Execution (A6)**: keep disabled by default and enable only with a clear safety policy. Current implementation is restricted to allowlisted analytical templates and `us-central1`.
 - **Fine-tuned model**: The `f1-tuned-model` secret is optional. If not set, simple queries fall back to `gemini-2.5-flash`. See [DEVELOPMENT.md](./DEVELOPMENT.md#fine-tuning-production-only) for details.
-- **Scaling**: Adjust `min_instances` and `max_instances` according to demand.
+- **Scaling**: tune `min_instances`, `max_instances`, and `container_concurrency` with load tests. For ADK async agents, start with concurrency as a multiple of 9.
 - **Data artifacts**: If PDFs or CSVs are updated, re-run `build_index.py` locally and upload the new artifacts to the bucket.
 - **Telemetry**: The deploy already enables traces and logs via OpenTelemetry. Access them in the Vertex AI console under **Dashboard** and **Traces**.
 - **Session contract**: client should propagate `user_id` + `session_id` on every request. If the app has no login, use a stable browser `client_id` and derive `user_id=anon-<hash(client_id)>`.

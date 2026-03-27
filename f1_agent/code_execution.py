@@ -18,6 +18,8 @@ import vertexai
 from google import genai
 from google.api_core import exceptions as gcp_exceptions
 
+from f1_agent.resilience import CircuitBreakerOpenError, run_with_retry
+
 logger = logging.getLogger(__name__)
 
 _ENABLED_ENV = "F1_CODE_EXECUTION_ENABLED"
@@ -301,9 +303,13 @@ def _execute_in_sandbox(
                 "message": "Sandbox creation did not return a sandbox name.",
             }
 
-        response = client.agent_engines.sandboxes.execute_code(
-            name=sandbox_name,
-            input_data={"code": code},
+        response = run_with_retry(
+            "code_execution.sandbox_execute",
+            lambda: client.agent_engines.sandboxes.execute_code(
+                name=sandbox_name,
+                input_data={"code": code},
+            ),
+            logger_instance=logger,
         )
         output = _extract_execution_output(response)
 
@@ -327,6 +333,7 @@ def _execute_in_sandbox(
         gcp_exceptions.InternalServerError,
         gcp_exceptions.ServiceUnavailable,
         gcp_exceptions.DeadlineExceeded,
+        CircuitBreakerOpenError,
     ) as exc:
         logger.warning("Code Execution sandbox failed", exc_info=True)
         return {

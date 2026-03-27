@@ -82,6 +82,50 @@ class SemanticCacheTests(unittest.TestCase):
         ).fetchone()
         self.assertEqual(row[0], 1)
 
+    def test_lookup_returns_metadata(self):
+        self.cache.put("Who won 2023?", "Verstappen")
+        result = self.cache.lookup("Who won 2023?")
+        self.assertEqual(result.outcome, "hit")
+        self.assertEqual(result.answer, "Verstappen")
+        self.assertGreaterEqual(result.candidates_scanned, 1)
+        self.assertIsNotNone(result.similarity_top1)
+
+    def test_sweep_removes_expired_entries(self):
+        from f1_agent.cache import SemanticCache
+
+        cache = SemanticCache(
+            cache_dir=Path(self._tmpdir),
+            sweep_every_ops=1,
+            sweep_interval_seconds=1,
+        )
+        cache.put("Q", "A", web_source=False)
+        cache._conn.execute(
+            "UPDATE cache_entries SET created_at = ?",
+            (time.time() - 90 * 24 * 3600,),
+        )
+        cache._conn.commit()
+
+        result = cache.lookup("Q")
+        self.assertIsNone(result.answer)
+        rows = cache._conn.execute("SELECT COUNT(*) FROM cache_entries").fetchone()
+        self.assertEqual(rows[0], 0)
+
+    def test_max_entries_prunes_lowest_priority(self):
+        from f1_agent.cache import SemanticCache
+
+        cache = SemanticCache(
+            cache_dir=Path(self._tmpdir),
+            max_entries=2,
+            sweep_every_ops=1,
+            sweep_interval_seconds=1,
+        )
+        cache.put("Q1", "A1")
+        cache.put("Q2", "A2")
+        cache.put("Q3", "A3")
+
+        rows = cache._conn.execute("SELECT COUNT(*) FROM cache_entries").fetchone()
+        self.assertEqual(rows[0], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

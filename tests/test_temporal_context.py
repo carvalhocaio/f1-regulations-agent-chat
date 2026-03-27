@@ -32,6 +32,16 @@ class _FakeRequest:
             self.contents = []
 
 
+class _FakeCacheLookupResult:
+    def __init__(self, answer):
+        self.answer = answer
+        self.outcome = "hit" if answer is not None else "miss"
+        self.lookup_ms = 0.1
+        self.candidates_scanned = 1
+        self.similarity_top1 = 0.95 if answer is not None else None
+        self.evicted_count = 0
+
+
 class _FakeCache:
     def __init__(self, answer="cached"):
         self.answer = answer
@@ -40,6 +50,10 @@ class _FakeCache:
     def get(self, _question):
         self.get_calls += 1
         return self.answer
+
+    def lookup(self, question):
+        self.get_calls += 1
+        return _FakeCacheLookupResult(self.answer)
 
 
 class TemporalContextTests(unittest.TestCase):

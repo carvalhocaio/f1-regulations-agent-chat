@@ -28,6 +28,7 @@ Built with [Google ADK](https://google.github.io/adk-docs/) and powered by Gemin
 - **Dynamic few-shot via Example Store (A5)** — retrieves similar examples of real errors at runtime (feature-flagged)
 - **Code Execution sandbox (A6, restricted mode)** — allowlisted analytical templates for simulations/statistics (feature-flagged)
 - **RAG Engine rollout (A4)** — `search_regulations` supports phased routing (`auto|local|vertex`) with automatic fallback to local hybrid RAG
+- **Standardized resilience** — exponential backoff + jitter + circuit breaker for transient 429/503 failures in runtime/tools
 - **Runtime temporal context** — injects current UTC date/year on every request to avoid stale year assumptions after deploy
 - **Temporal reasoning** — automatically splits questions: `1950-2024` via SQLite, `2025+` via web search
 
@@ -95,6 +96,22 @@ Recommended flow:
 
 This enables cross-request persistence for callback state (for example, correction memory).
 
+## WebSocket Streaming Contract (P7)
+
+Bridge endpoint: `ws://<host>:8001/ws/chat`
+
+Client -> server messages:
+- `{"type":"input","input":"...","request_id":"...","user_id":"...","session_id":"..."}`
+- `{"type":"abort"}`
+- `{"type":"ping"}`
+- `{"type":"close"}`
+
+Server -> client events (`stream_protocol_version=v1`):
+- `turn_start`
+- `delta`
+- `turn_end`
+- `error`
+
 ## Stack
 
 - [Google ADK](https://google.github.io/adk-docs/) — agent framework and local web UI
@@ -129,12 +146,16 @@ GOOGLE_API_KEY=your-key-here
 # F1_TUNED_MODEL=projects/<PROJECT_NUMBER>/locations/us-central1/endpoints/<ENDPOINT_ID>
 
 # Optional (A4 phased rollout). Keep local by default.
-# F1_RAG_BACKEND=local           # local|auto|vertex
+# F1_RAG_BACKEND=local           # local|auto|vertex|vector_search
 # F1_RAG_CORPUS=projects/<PROJECT_NUMBER>/locations/us-central1/ragCorpora/<RAG_CORPUS_ID>
 # F1_RAG_PROJECT_ID=<PROJECT_ID>
 # F1_RAG_LOCATION=us-central1
 # F1_RAG_TOP_K=5
 # F1_RAG_VECTOR_DISTANCE_THRESHOLD=0.5
+# F1_VECTOR_SEARCH_PARENT=projects/<PROJECT_ID>/locations/us-central1/collections/<COLLECTION_ID>
+# F1_VECTOR_SEARCH_FIELD=embedding
+# F1_VECTOR_SEARCH_TOP_K=5
+# F1_VECTOR_SEARCH_OUTPUT_FIELDS=data_fields,metadata_fields
 
 # Optional (A5 dynamic few-shot). Keep disabled by default.
 # F1_EXAMPLE_STORE_ENABLED=false
@@ -157,6 +178,26 @@ GOOGLE_API_KEY=your-key-here
 # F1_CODE_EXECUTION_AGENT_ENGINE_NAME=projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>
 # F1_CODE_EXECUTION_SANDBOX_TTL_SECONDS=3600
 # F1_CODE_EXECUTION_MAX_ROWS=500
+
+# Optional (P6 throughput routing). Default is DSQ/pay-as-you-go.
+# F1_VERTEX_LLM_REQUEST_TYPE=shared  # shared|dedicated
+
+# Optional (P2 resilience defaults tuned for chat fail-fast).
+# F1_LLM_RETRY_ENABLED=true
+# F1_LLM_RETRY_ATTEMPTS=3
+# F1_LLM_RETRY_INITIAL_DELAY_S=1.0
+# F1_LLM_RETRY_MAX_DELAY_S=8.0
+# F1_LLM_RETRY_EXP_BASE=2.0
+# F1_LLM_RETRY_JITTER=0.35
+# F1_RETRY_ENABLED=true
+# F1_RETRY_MAX_ATTEMPTS=3
+# F1_RETRY_INITIAL_DELAY_S=0.4
+# F1_RETRY_MAX_DELAY_S=4.0
+# F1_RETRY_EXP_BASE=2.0
+# F1_RETRY_JITTER=0.35
+# F1_CIRCUIT_ENABLED=true
+# F1_CIRCUIT_FAILURE_THRESHOLD=5
+# F1_CIRCUIT_OPEN_SECONDS=20
 EOF
 
 # 4. Add source data to docs/ (FIA PDFs + Kaggle CSVs)
@@ -206,12 +247,16 @@ f1-regulations-agent-chat/
 │   ├── callbacks.py            # Model routing, semantic cache, session corrections
 │   ├── runner.py               # ADK runner wiring for managed/local sessions
 │   ├── sessions.py             # user_id/session_id normalization helpers
+│   ├── streaming_protocol.py    # Stream event envelope (`stream_protocol_version=v1`)
+│   ├── bidi.py                 # Helpers to convert bidi SDK events into protocol events
+│   ├── websocket_bridge.py      # Framework-agnostic WebSocket <-> bidi bridge loop
 │   ├── memory_bank.py          # Long-term memory retrieval/generation (A3)
 │   ├── cache.py                # SemanticCache (FAISS + SQLite, TTL-based)
 │   ├── code_execution.py       # Restricted analytical sandbox adapter (A6)
 │   ├── tools.py                # Agent tools (regulations, history, search)
 │   ├── rag.py                  # PDF loading, chunking, FAISS + BM25 hybrid search
 │   ├── rag_vertex.py           # Vertex RAG adapter (A4 phased externalization)
+│   ├── rag_vector_search.py    # Vertex Vector Search adapter (P8 candidate backend)
 │   ├── db.py                   # SQLite schema/build/query helpers
 │   ├── sql_templates.py        # 15 pre-built SQL templates for common queries
 │   ├── prompts/
@@ -223,6 +268,11 @@ f1-regulations-agent-chat/
 ├── tests/                      # Unit tests (routing, cache, tools, sessions, temporal logic)
 ├── deployment/
 │   ├── deploy.py               # Vertex AI Agent Engine deploy script
+│   ├── smoke_bidi_agent_engine.py # Bidi streaming smoke test (P7)
+│   ├── benchmark_streaming_modes.py # Compare TTFT across query/streaming modes
+│   ├── benchmark_retrieval_backends.py # Compare local/vertex/vector_search retrieval
+│   ├── vector_search_bootstrap.py # Create Vector Search collection and ingest chunks
+│   ├── websocket_bidi_server.py # FastAPI WebSocket bridge for interactive bidi chat
 │   ├── rag_engine_ingest.py    # Vertex RAG corpus create/import helper
 │   └── terraform/              # GCP infrastructure as code
 ├── docs/                       # FIA PDFs + Kaggle CSV folder (input data)

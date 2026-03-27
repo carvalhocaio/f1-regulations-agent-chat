@@ -586,6 +586,7 @@ dependencies = [
     { name = "google-adk" },
     { name = "google-cloud-aiplatform" },
     { name = "google-cloud-secret-manager" },
+    { name = "google-cloud-vectorsearch" },
     { name = "langchain" },
     { name = "langchain-community" },
     { name = "langchain-google-genai" },
@@ -608,6 +609,7 @@ requires-dist = [
     { name = "google-adk" },
     { name = "google-cloud-aiplatform", specifier = ">=1.141.0" },
     { name = "google-cloud-secret-manager", specifier = ">=2.26.0" },
+    { name = "google-cloud-vectorsearch", specifier = ">=0.9.0" },
     { name = "langchain" },
     { name = "langchain-community" },
     { name = "langchain-google-genai" },
@@ -1265,6 +1267,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/02/34/b1883f4682f1681941100df0e411cb0185013f7c349489ab1330348d7c5c/google_cloud_trace-1.18.0.tar.gz", hash = "sha256:46d42b90273da3bc4850bb0d6b9a205eb826a54561ff1b30ca33cc92174c3f37", size = 103347, upload-time = "2026-01-15T13:04:56.441Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/87/15/366fd8b028a50a9018c933270d220a4e53dca8022ce9086618b72978ab90/google_cloud_trace-1.18.0-py3-none-any.whl", hash = "sha256:52c002d8d3da802e031fee62cd49a1baf899932d4f548a150f685af6815b5554", size = 107488, upload-time = "2026-01-15T12:17:21.519Z" },
+]
+
+[[package]]
+name = "google-cloud-vectorsearch"
+version = "0.9.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "google-api-core", extra = ["grpc"] },
+    { name = "google-auth" },
+    { name = "grpcio" },
+    { name = "proto-plus" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2c/09/5885158e25d7f3cb25c4fdea817f693ddba7e7f1b4f63173c452942bcf50/google_cloud_vectorsearch-0.9.0.tar.gz", hash = "sha256:ab6d04f030b5de9328cd226cd6230854bfb4ec06b9796dfe7615be9fe4dad96c", size = 412825, upload-time = "2026-03-26T22:16:49.326Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bc/00/da5ffc2f5586a048b9be3795d0fc8334911fbdc716d05d7156e39a9bdcab/google_cloud_vectorsearch-0.9.0-py3-none-any.whl", hash = "sha256:daf24a49f63a389e79c2e784c24a323ba96e708e04b263a00bed9886c92db77e", size = 349356, upload-time = "2026-03-26T22:14:45.076Z" },
 ]
 
 [[package]]

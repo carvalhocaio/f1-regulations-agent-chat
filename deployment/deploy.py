@@ -154,6 +154,9 @@ def build_agent_engine_config(
         display_name=args.display_name,
         description=args.description,
         service_account=args.service_account,
+        min_instances=args.min_instances,
+        max_instances=args.max_instances,
+        container_concurrency=args.container_concurrency,
         env_vars=env_vars,
         staging_bucket=args.staging_bucket,
     )
@@ -191,6 +194,33 @@ def _drop_empty_env_values(env_vars: dict[str, str]) -> dict[str, str]:
     return cleaned
 
 
+def _validate_runtime_scaling(args: argparse.Namespace) -> None:
+    """Validate Agent Engine runtime scaling controls."""
+    if args.min_instances < 0:
+        raise ValueError("--min-instances must be >= 0")
+
+    if args.min_instances > 10:
+        raise ValueError("--min-instances must be <= 10")
+
+    if args.max_instances < 1:
+        raise ValueError("--max-instances must be >= 1")
+
+    if args.max_instances > 100:
+        raise ValueError("--max-instances must be <= 100")
+
+    if args.max_instances < args.min_instances:
+        raise ValueError("--max-instances must be >= --min-instances")
+
+    if args.container_concurrency < 1:
+        raise ValueError("--container-concurrency must be >= 1")
+
+    if args.container_concurrency % 9 != 0:
+        print(
+            "Warning: for ADK async agents, use --container-concurrency as "
+            "a multiple of 9 (for example, 18 or 36)."
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Deploy F1 agent to Agent Engine")
     parser.add_argument("--project-id", required=True)
@@ -200,9 +230,27 @@ def main():
     parser.add_argument("--description", default="F1 Regulations & History Agent")
     parser.add_argument("--service-account", default=None)
     parser.add_argument(
+        "--min-instances",
+        type=int,
+        default=2,
+        help="Minimum warm Agent Engine instances (0-10)",
+    )
+    parser.add_argument(
+        "--max-instances",
+        type=int,
+        default=6,
+        help="Maximum Agent Engine instances (>= min, <= 100)",
+    )
+    parser.add_argument(
+        "--container-concurrency",
+        type=int,
+        default=18,
+        help="Max concurrent requests per container (ADK async: multiple of 9)",
+    )
+    parser.add_argument(
         "--rag-backend",
         default="auto",
-        choices=["auto", "local", "vertex"],
+        choices=["auto", "local", "vertex", "vector_search"],
         help="RAG backend routing mode for regulations retrieval",
     )
     parser.add_argument(
@@ -226,6 +274,33 @@ def main():
         type=float,
         default=None,
         help="Optional Vertex RAG vector distance threshold",
+    )
+    parser.add_argument(
+        "--vector-search-parent",
+        default="",
+        help=(
+            "Vector Search collection resource path, e.g. "
+            "projects/<PROJECT_ID>/locations/<LOCATION>/collections/<COLLECTION_ID>"
+        ),
+    )
+    parser.add_argument(
+        "--vector-search-field",
+        default="embedding",
+        help="Vector field name used by Vector Search queries",
+    )
+    parser.add_argument(
+        "--vector-search-top-k",
+        type=int,
+        default=5,
+        help="Top-k documents retrieved from Vector Search",
+    )
+    parser.add_argument(
+        "--vector-search-output-fields",
+        default="data_fields,metadata_fields",
+        help=(
+            "Comma-separated output fields for Vector Search response: "
+            "data_fields,metadata_fields,vector_fields"
+        ),
     )
     parser.add_argument(
         "--example-store-enabled",
@@ -304,6 +379,59 @@ def main():
         default=500,
         help="Max row-like items accepted by analytical payload validators",
     )
+    parser.add_argument(
+        "--vertex-llm-request-type",
+        default="shared",
+        choices=["shared", "dedicated"],
+        help=(
+            "Vertex Gemini throughput route: shared (DSQ/pay-as-you-go) "
+            "or dedicated (Provisioned Throughput)"
+        ),
+    )
+    # ── Token Preflight (CountTokens pre-call check) ──
+    parser.add_argument(
+        "--preflight-token-check-enabled",
+        action="store_true",
+        default=False,
+        help="Enable CountTokens preflight check before each model call",
+    )
+    parser.add_argument(
+        "--preflight-token-threshold",
+        type=float,
+        default=0.80,
+        help="Fraction of context window that triggers truncation (0.0-1.0)",
+    )
+    parser.add_argument(
+        "--preflight-token-hard-limit",
+        type=int,
+        default=0,
+        help="Absolute token cap (0 = use fraction of context window)",
+    )
+    # ── Context Cache (Gemini native prompt caching) ──
+    parser.add_argument(
+        "--context-cache-enabled",
+        action="store_true",
+        default=False,
+        help="Enable explicit Gemini context caching via ADK ContextCacheConfig",
+    )
+    parser.add_argument(
+        "--context-cache-intervals",
+        type=int,
+        default=10,
+        help="Max invocations per explicit cache before recreation",
+    )
+    parser.add_argument(
+        "--context-cache-ttl",
+        type=int,
+        default=1800,
+        help="Explicit cache TTL in seconds (default: 30 min)",
+    )
+    parser.add_argument(
+        "--context-cache-min-tokens",
+        type=int,
+        default=4096,
+        help="Minimum token count to trigger explicit caching",
+    )
     args = parser.parse_args()
 
     if args.example_store_enabled and not args.example_store_name:
@@ -311,6 +439,20 @@ def main():
             "--example-store-enabled requires --example-store-name "
             "(projects/.../locations/.../exampleStores/...)"
         )
+    if args.rag_backend == "vector_search" and not args.vector_search_parent:
+        raise ValueError(
+            "--rag-backend=vector_search requires --vector-search-parent "
+            "(projects/.../locations/.../collections/...)"
+        )
+
+    _validate_runtime_scaling(args)
+
+    print(
+        "Runtime scaling: "
+        f"min_instances={args.min_instances}, "
+        f"max_instances={args.max_instances}, "
+        f"container_concurrency={args.container_concurrency}"
+    )
 
     client = vertexai.Client(
         project=args.project_id,
@@ -331,6 +473,10 @@ def main():
         "F1_RAG_PROJECT_ID": args.project_id,
         "F1_RAG_LOCATION": args.rag_location or args.location,
         "F1_RAG_TOP_K": str(max(1, args.rag_top_k)),
+        "F1_VECTOR_SEARCH_PARENT": args.vector_search_parent,
+        "F1_VECTOR_SEARCH_FIELD": args.vector_search_field,
+        "F1_VECTOR_SEARCH_TOP_K": str(max(1, args.vector_search_top_k)),
+        "F1_VECTOR_SEARCH_OUTPUT_FIELDS": args.vector_search_output_fields,
         "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
         "F1_EXAMPLE_STORE_ENABLED": "true" if args.example_store_enabled else "false",
@@ -353,6 +499,20 @@ def main():
             max(300, args.code_execution_sandbox_ttl_seconds)
         ),
         "F1_CODE_EXECUTION_MAX_ROWS": str(max(10, args.code_execution_max_rows)),
+        "F1_VERTEX_LLM_REQUEST_TYPE": args.vertex_llm_request_type,
+        # Token Preflight (CountTokens pre-call check)
+        "F1_PREFLIGHT_TOKEN_CHECK_ENABLED": "true"
+        if args.preflight_token_check_enabled
+        else "false",
+        "F1_PREFLIGHT_TOKEN_THRESHOLD": str(
+            max(0.0, min(1.0, args.preflight_token_threshold))
+        ),
+        "F1_PREFLIGHT_TOKEN_HARD_LIMIT": str(max(0, args.preflight_token_hard_limit)),
+        # Context Cache (Gemini native prompt caching via ADK ContextCacheConfig)
+        "F1_CONTEXT_CACHE_ENABLED": "true" if args.context_cache_enabled else "false",
+        "F1_CONTEXT_CACHE_INTERVALS": str(max(1, args.context_cache_intervals)),
+        "F1_CONTEXT_CACHE_TTL": str(max(60, args.context_cache_ttl)),
+        "F1_CONTEXT_CACHE_MIN_TOKENS": str(max(0, args.context_cache_min_tokens)),
     }
 
     if args.rag_corpus:

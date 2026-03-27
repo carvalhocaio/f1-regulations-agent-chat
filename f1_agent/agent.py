@@ -2,22 +2,30 @@ from datetime import datetime
 from pathlib import Path
 
 from google.adk.agents import Agent
+from google.adk.agents.context_cache_config import ContextCacheConfig
+from google.adk.apps import App
+from google.adk.models.google_llm import Gemini
 from google.adk.models.llm_response import LlmResponse
 from google.adk.tools.google_search_tool import GoogleSearchTool
 from google.genai import types
 
 from f1_agent.callbacks import (
+    apply_throughput_request_type,
     check_cache,
     detect_corrections,
     inject_corrections,
     inject_dynamic_examples,
     inject_long_term_memories,
     inject_runtime_temporal_context,
+    log_context_cache_metrics,
+    preflight_token_check,
     route_model,
     store_cache,
     sync_memory_bank,
 )
 from f1_agent.code_execution import run_analytical_code
+from f1_agent.env_utils import env_bool, env_float, env_int
+from f1_agent.resilience import is_quota_or_unavailable_error
 from f1_agent.tools import (
     query_f1_history,
     query_f1_history_template,
@@ -32,9 +40,18 @@ google_search = GoogleSearchTool(bypass_multi_tools_limit=True)
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 
-def _load_instruction() -> str:
-    """Load the system instruction from file and interpolate runtime values."""
-    template = (_PROMPTS_DIR / "system_instruction.txt").read_text(encoding="utf-8")
+def _load_static_instruction() -> str:
+    """Load the static system instruction from file and interpolate runtime values.
+
+    This instruction is placed in ``static_instruction`` so that ADK keeps it
+    as a stable system-instruction prefix, enabling Gemini context caching
+    (both implicit and explicit).  Dynamic per-request content (temporal
+    context, corrections, memories, examples) is injected separately into
+    user content by before-model callbacks.
+    """
+    template = (_PROMPTS_DIR / "system_instruction_static.txt").read_text(
+        encoding="utf-8"
+    )
     return template.format(
         CURRENT_YEAR=CURRENT_YEAR,
         YEAR_MINUS_1=CURRENT_YEAR - 1,
@@ -56,12 +73,11 @@ def handle_rate_limit(
         return None
 
     err_text = str(err)
-    err_type = type(err).__name__
 
-    if (
+    if is_quota_or_unavailable_error(err) and (
         "429" in err_text
-        or "ResourceExhausted" in err_type
         or "ResourceExhausted" in err_text
+        or "resourceexhausted" in err_text.lower()
     ):
         return LlmResponse(
             content=types.Content(
@@ -78,7 +94,7 @@ def handle_rate_limit(
             )
         )
 
-    if (
+    if is_quota_or_unavailable_error(err) and (
         "503" in err_text
         or "Service Unavailable" in err_text
         or "UNAVAILABLE" in err_text
@@ -100,14 +116,29 @@ def handle_rate_limit(
     return None
 
 
+def _build_model():
+    if not env_bool("F1_LLM_RETRY_ENABLED", True):
+        return "gemini-2.5-pro"
+
+    retry_options = types.HttpRetryOptions(
+        initial_delay=max(0.0, env_float("F1_LLM_RETRY_INITIAL_DELAY_S", 1.0)),
+        attempts=max(1, env_int("F1_LLM_RETRY_ATTEMPTS", 3)),
+        exp_base=max(1.1, env_float("F1_LLM_RETRY_EXP_BASE", 2.0)),
+        max_delay=max(0.1, env_float("F1_LLM_RETRY_MAX_DELAY_S", 8.0)),
+        jitter=max(0.0, env_float("F1_LLM_RETRY_JITTER", 0.35)),
+        http_status_codes=[408, 429, 500, 502, 503, 504],
+    )
+    return Gemini(model="gemini-2.5-pro", retry_options=retry_options)
+
+
 root_agent = Agent(
     name="f1_regulations_assistant",
-    model="gemini-2.5-pro",
+    model=_build_model(),
     description=(
         "An AI assistant for Formula 1, covering both the official FIA 2026 "
         "regulations and general F1 knowledge."
     ),
-    instruction=_load_instruction(),
+    static_instruction=_load_static_instruction(),
     tools=[
         search_regulations,
         query_f1_history_template,
@@ -123,7 +154,36 @@ root_agent = Agent(
         inject_long_term_memories,
         inject_dynamic_examples,
         route_model,
+        apply_throughput_request_type,
+        preflight_token_check,
     ],
-    after_model_callback=[detect_corrections, sync_memory_bank, store_cache],
+    after_model_callback=[
+        log_context_cache_metrics,
+        detect_corrections,
+        sync_memory_bank,
+        store_cache,
+    ],
     on_model_error_callback=handle_rate_limit,
 )
+
+
+def build_app() -> App:
+    """Wrap the root agent in an ADK App with optional context caching.
+
+    When ``F1_CONTEXT_CACHE_ENABLED=true``, the App uses ADK's built-in
+    ``ContextCacheConfig`` which delegates to ``GeminiContextCacheManager``
+    for explicit Gemini context caching of system instruction + tools +
+    conversation history prefix.
+    """
+    cache_config = None
+    if env_bool("F1_CONTEXT_CACHE_ENABLED", False):
+        cache_config = ContextCacheConfig(
+            cache_intervals=env_int("F1_CONTEXT_CACHE_INTERVALS", 10),
+            ttl_seconds=env_int("F1_CONTEXT_CACHE_TTL", 1800),
+            min_tokens=env_int("F1_CONTEXT_CACHE_MIN_TOKENS", 4096),
+        )
+    return App(
+        name="f1_regulations_assistant",
+        root_agent=root_agent,
+        context_cache_config=cache_config,
+    )
