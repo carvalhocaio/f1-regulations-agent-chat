@@ -171,6 +171,42 @@ def _without_service_account(
     return types.AgentEngineConfig.model_validate(payload)
 
 
+def _agentless_update_config(
+    config: types.AgentEngineConfig,
+) -> types.AgentEngineConfig:
+    """Return minimal config safe for SDK update(agent=None).
+
+    The Vertex SDK rejects `requirements`, `extra_packages`, and deployment
+    settings (`env_vars`, scaling controls) when `agent` is omitted.
+    """
+    payload = config.model_dump(exclude_none=True)
+    for key in (
+        "requirements",
+        "extra_packages",
+        "staging_bucket",
+        "gcs_dir_name",
+        "env_vars",
+        "psc_interface_config",
+        "min_instances",
+        "max_instances",
+        "resource_limits",
+        "container_concurrency",
+        "class_methods",
+        "source_packages",
+        "developer_connect_source",
+        "entrypoint_module",
+        "entrypoint_object",
+        "requirements_file",
+        "agent_framework",
+        "python_version",
+        "build_options",
+        "image_spec",
+        "agent_config_source",
+    ):
+        payload.pop(key, None)
+    return types.AgentEngineConfig.model_validate(payload)
+
+
 def _is_service_account_actas_error(exc: Exception) -> bool:
     """Return true when error indicates missing iam.serviceAccountUser."""
     if not isinstance(exc, genai_errors.ClientError):
@@ -479,12 +515,29 @@ def main():
             if _is_invalid_agent_callable_error(exc):
                 print(
                     "Warning: local agent object is not directly deployable by this "
-                    "SDK; retrying update with config only."
+                    "SDK; retrying update with minimal config-only patch."
                 )
-                client.agent_engines.update(
-                    name=existing,
-                    config=config,
-                )
+                fallback_config = _agentless_update_config(config)
+                try:
+                    client.agent_engines.update(
+                        name=existing,
+                        config=fallback_config,
+                    )
+                except Exception as fallback_exc:
+                    if args.service_account and _is_service_account_actas_error(
+                        fallback_exc
+                    ):
+                        print(
+                            "Warning: missing iam.serviceAccountUser on configured "
+                            "service account; retrying config-only patch without "
+                            "explicit service_account"
+                        )
+                        client.agent_engines.update(
+                            name=existing,
+                            config=_without_service_account(fallback_config),
+                        )
+                    else:
+                        raise
             elif args.service_account and _is_service_account_actas_error(exc):
                 print(
                     "Warning: missing iam.serviceAccountUser on configured service "

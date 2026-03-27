@@ -69,6 +69,32 @@ class BuildAgentEngineConfigTests(unittest.TestCase):
         self.assertEqual(payload.get("max_instances"), 6)
         self.assertEqual(payload.get("container_concurrency"), 18)
 
+    def test_agentless_update_config_drops_agent_required_fields(self):
+        args = SimpleNamespace(
+            display_name="f1-agent",
+            description="F1 Regulations & History Agent",
+            service_account="agent@example.iam.gserviceaccount.com",
+            staging_bucket="gs://bucket",
+            min_instances=2,
+            max_instances=6,
+            container_concurrency=18,
+        )
+        config = deploy.build_agent_engine_config(
+            args,
+            env_vars={"GEMINI_API_KEY": "x", "F1_RAG_BACKEND": "auto"},
+        )
+
+        reduced = deploy._agentless_update_config(config)
+        payload = reduced.model_dump(exclude_none=True)
+
+        self.assertEqual(payload.get("display_name"), "f1-agent")
+        self.assertNotIn("requirements", payload)
+        self.assertNotIn("extra_packages", payload)
+        self.assertNotIn("env_vars", payload)
+        self.assertNotIn("min_instances", payload)
+        self.assertNotIn("max_instances", payload)
+        self.assertNotIn("container_concurrency", payload)
+
 
 class DeployErrorClassifierTests(unittest.TestCase):
     def test_detects_invalid_agent_callable_error(self):
