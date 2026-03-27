@@ -176,6 +176,21 @@ def _is_service_account_actas_error(exc: Exception) -> bool:
     return "permission to act as service_account" in message
 
 
+def _drop_empty_env_values(env_vars: dict[str, str]) -> dict[str, str]:
+    """Return env vars without empty-string values.
+
+    Agent Engine rejects environment entries with unset/empty values.
+    """
+    cleaned: dict[str, str] = {}
+    for key, value in env_vars.items():
+        if value is None:
+            continue
+        if isinstance(value, str) and value.strip() == "":
+            continue
+        cleaned[key] = value
+    return cleaned
+
+
 def main():
     parser = argparse.ArgumentParser(description="Deploy F1 agent to Agent Engine")
     parser.add_argument("--project-id", required=True)
@@ -347,6 +362,8 @@ def main():
         env_vars["F1_RAG_VECTOR_DISTANCE_THRESHOLD"] = str(
             args.rag_vector_distance_threshold
         )
+
+    env_vars = _drop_empty_env_values(env_vars)
 
     config = build_agent_engine_config(args, env_vars)
     existing = find_existing_agent(client, args.display_name)
