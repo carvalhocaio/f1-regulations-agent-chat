@@ -216,13 +216,13 @@ def _runtime_temporal_addendum() -> str:
         " are FINISHED, HISTORICAL seasons.\n"
         "- Historical DB coverage: 1950-2024 only.\n"
         f"- For data from 2025 through {last_completed}:"
-        " use google_search_agent.\n"
+        " use google_search.\n"
         f"- For data from {current_year} (ongoing season):"
-        " use google_search_agent.\n"
+        " use google_search.\n"
         "- CRITICAL: Your training data may be outdated. If your training"
         f" data says '{last_completed} season hasn't concluded' or similar,"
         f" THAT IS WRONG. Trust THIS instruction: the {last_completed}"
-        " season is over. When google_search_agent returns results about"
+        " season is over. When google_search returns results about"
         " post-2024 seasons, TRUST and REPORT those results."
         " Do NOT contradict them with your training knowledge.\n"
         "- Do not describe completed seasons as future or ongoing events."
@@ -288,8 +288,7 @@ def _resolve_temporal_references(user_text: str) -> str | None:
         )
         if last_completed > _DB_MAX_YEAR:
             tool_hints.append(
-                f"- Year {last_completed} is NOT in the database"
-                " → use google_search_agent"
+                f"- Year {last_completed} is NOT in the database -> use google_search"
             )
         else:
             tool_hints.append(
@@ -312,13 +311,11 @@ def _resolve_temporal_references(user_text: str) -> str | None:
             tool_hints.append(
                 f"- DB (query_f1_history_template): {db_years[0]}-{db_years[-1]}"
             )
-            tool_hints.append(
-                f"- Web (google_search_agent): {web_years[0]}-{web_years[-1]}"
-            )
+            tool_hints.append(f"- Web (google_search): {web_years[0]}-{web_years[-1]}")
             tool_hints.append("- Combine BOTH into a single unified answer")
         elif web_years:
             tool_hints.append(
-                f"- All years ({web_years[0]}-{web_years[-1]}) need google_search_agent"
+                f"- All years ({web_years[0]}-{web_years[-1]}) need google_search"
             )
         elif db_years:
             tool_hints.append(
@@ -332,12 +329,12 @@ def _resolve_temporal_references(user_text: str) -> str | None:
             f" (season COMPLETED)"
         )
         if last_completed > _DB_MAX_YEAR:
-            tool_hints.append(f"- {last_completed} champion: use google_search_agent")
+            tool_hints.append(f"- {last_completed} champion: use google_search")
 
     # "esta temporada" / "this season"
     if _THIS_SEASON_RE.search(user_text):
         resolutions.append(f"- 'This/current season' = {current_year} (may be ongoing)")
-        tool_hints.append(f"- {current_year} season: use google_search_agent")
+        tool_hints.append(f"- {current_year} season: use google_search")
 
     if _LAST_EVENT_RE.search(user_text) and not _YEAR_RE.search(user_text):
         resolutions.append(
@@ -349,8 +346,7 @@ def _resolve_temporal_references(user_text: str) -> str | None:
             " depending on event date"
         )
         tool_hints.append(
-            "- Use google_search_agent and return the event DATE and YEAR"
-            " to prove recency"
+            "- Use google_search and return the event DATE and YEAR to prove recency"
         )
         tool_hints.append(
             "- Never claim a season/event before current year is still in the future"
@@ -361,8 +357,7 @@ def _resolve_temporal_references(user_text: str) -> str | None:
             f"- Missing year + 'next event' wording = next scheduled event in {current_year}"
         )
         tool_hints.append(
-            "- Use google_search_agent for the current-year calendar and return"
-            " event date"
+            "- Use google_search for the current-year calendar and return event date"
         )
 
     if _CURRENT_STANDINGS_RE.search(user_text):
@@ -370,7 +365,7 @@ def _resolve_temporal_references(user_text: str) -> str | None:
             f"- Standings/leader request without explicit year defaults to {current_year}"
         )
         tool_hints.append(
-            "- Use google_search_agent and verify if at least one race in the current"
+            "- Use google_search and verify if at least one race in the current"
             " season has already happened"
         )
         if current_date.month <= 2:

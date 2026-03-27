@@ -88,14 +88,26 @@ class SchemaTests(unittest.TestCase):
             self.assertIn("parameters", decl)
             self.assertIn("type", decl["parameters"])
             self.assertIn("properties", decl["parameters"])
+            self.assertIn("additionalProperties", decl["parameters"])
+            self.assertFalse(decl["parameters"]["additionalProperties"])
 
     def test_tool_declarations_names(self):
         names = [d["name"] for d in TOOL_DECLARATIONS]
         self.assertIn("query_f1_history_template", names)
         self.assertIn("query_f1_history", names)
         self.assertIn("search_regulations", names)
-        self.assertIn("google_search_agent", names)
+        self.assertIn("google_search", names)
         self.assertIn("run_analytical_code", names)
+
+    def test_run_analytical_code_has_enum_task_type(self):
+        declaration = next(
+            d for d in TOOL_DECLARATIONS if d["name"] == "run_analytical_code"
+        )
+        task_type = declaration["parameters"]["properties"]["task_type"]
+        self.assertEqual(
+            task_type["enum"],
+            ["summary_stats", "what_if_points", "distribution_bins"],
+        )
 
     def test_examples_to_jsonl(self):
         examples = [

@@ -4,17 +4,17 @@ from f1_agent.agent import root_agent
 
 
 class AgentToolContractTests(unittest.TestCase):
-    def test_instruction_uses_google_search_agent_name(self):
+    def test_instruction_uses_google_search_name(self):
         instruction = root_agent.static_instruction
 
-        self.assertIn("google_search_agent", instruction)
-        self.assertNotIn("**google_search**", instruction)
+        self.assertIn("google_search", instruction)
+        self.assertNotIn("google_search_agent", instruction)
 
-    def test_instruction_mentions_search_as_fallback(self):
+    def test_instruction_does_not_allow_search_alias(self):
         instruction = root_agent.static_instruction
 
-        self.assertIn("search", instruction)
-        self.assertIn("fallback", instruction.lower())
+        self.assertNotIn("`search`", instruction)
+        self.assertIn("NEVER invent tool names", instruction)
 
     def test_instruction_mentions_analytical_sandbox_tool(self):
         instruction = root_agent.static_instruction
@@ -43,8 +43,8 @@ class AgentToolContractTests(unittest.TestCase):
         self.assertIn("query_f1_history", tool_names)
         self.assertIn("query_f1_history_template", tool_names)
         self.assertIn("run_analytical_code", tool_names)
-        self.assertIn("search", tool_names)
         self.assertIn("google_search", tool_names)
+        self.assertNotIn("search", tool_names)
 
     def test_instruction_enforces_last_event_without_year_policy(self):
         instruction = root_agent.static_instruction

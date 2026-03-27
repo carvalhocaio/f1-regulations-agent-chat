@@ -29,7 +29,6 @@ from f1_agent.resilience import is_quota_or_unavailable_error
 from f1_agent.tools import (
     query_f1_history,
     query_f1_history_template,
-    search,
     search_regulations,
 )
 
@@ -144,7 +143,6 @@ root_agent = Agent(
         query_f1_history_template,
         query_f1_history,
         run_analytical_code,
-        search,
         google_search,
     ],
     before_model_callback=[
