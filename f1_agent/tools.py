@@ -95,7 +95,12 @@ def search(query: str | None = None, request: str | None = None) -> dict:
     `search` (generic name) instead of one of the explicit tools.
     """
     normalized_query = (query or request or "").strip()
-    valid_tools = ["search_regulations", "query_f1_history", "google_search_agent"]
+    valid_tools = [
+        "search_regulations",
+        "query_f1_history",
+        "google_search_agent",
+        "run_analytical_code",
+    ]
 
     if not normalized_query:
         return {
@@ -104,7 +109,8 @@ def search(query: str | None = None, request: str | None = None) -> dict:
                 "Tool `search` is not a valid data source. Retry with one of the"
                 " valid tools: search_regulations(query),"
                 " query_f1_history(sql_query), or"
-                " google_search_agent(request)."
+                " google_search_agent(request), or"
+                " run_analytical_code(task_type, payload)."
             ),
             "valid_tools": valid_tools,
         }
@@ -114,7 +120,8 @@ def search(query: str | None = None, request: str | None = None) -> dict:
         "message": (
             "Tool `search` is a compatibility alias only. Retry immediately with"
             " exactly one valid tool: search_regulations(query),"
-            " query_f1_history(sql_query), or google_search_agent(request)."
+            " query_f1_history(sql_query), google_search_agent(request),"
+            " or run_analytical_code(task_type, payload)."
         ),
         "valid_tools": valid_tools,
         "suggested_query": normalized_query,

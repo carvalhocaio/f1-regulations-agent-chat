@@ -79,6 +79,30 @@ TOOL_DECLARATIONS: list[dict[str, Any]] = [
             "required": ["request"],
         },
     },
+    {
+        "name": "run_analytical_code",
+        "description": (
+            "Run restricted analytical templates in a managed sandbox for "
+            "advanced computations."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "task_type": {
+                    "type": "STRING",
+                    "description": (
+                        "Allowlisted analytical task: summary_stats, "
+                        "what_if_points, distribution_bins."
+                    ),
+                },
+                "payload": {
+                    "type": "STRING",
+                    "description": "JSON string with task-specific input data.",
+                },
+            },
+            "required": ["task_type"],
+        },
+    },
 ]
 
 SYSTEM_INSTRUCTION = (

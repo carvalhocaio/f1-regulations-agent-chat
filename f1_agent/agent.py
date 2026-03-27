@@ -15,6 +15,7 @@ from f1_agent.callbacks import (
     route_model,
     store_cache,
 )
+from f1_agent.code_execution import run_analytical_code
 from f1_agent.tools import (
     query_f1_history,
     query_f1_history_template,
@@ -109,6 +110,7 @@ root_agent = Agent(
         search_regulations,
         query_f1_history_template,
         query_f1_history,
+        run_analytical_code,
         search,
         google_search,
     ],

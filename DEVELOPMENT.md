@@ -81,6 +81,11 @@ Opens the ADK web UI at `http://localhost:8000`.
 | `F1_EXAMPLE_STORE_NAME` | No | — | Example Store resource name: `projects/.../locations/.../exampleStores/...` |
 | `F1_EXAMPLE_STORE_TOP_K` | No | `3` | Number of candidate examples retrieved per request |
 | `F1_EXAMPLE_STORE_MIN_SCORE` | No | `0.65` | Similarity threshold for injecting an example |
+| `F1_CODE_EXECUTION_ENABLED` | No | `false` | Enables restricted analytical Code Execution tool |
+| `F1_CODE_EXECUTION_LOCATION` | No | `us-central1` | Region for Code Execution sandboxes (currently only `us-central1`) |
+| `F1_CODE_EXECUTION_AGENT_ENGINE_NAME` | No | — | Agent Engine resource used as parent for sandbox operations |
+| `F1_CODE_EXECUTION_SANDBOX_TTL_SECONDS` | No | `3600` | TTL for sandbox lifecycle in seconds |
+| `F1_CODE_EXECUTION_MAX_ROWS` | No | `500` | Max list size accepted by analytical payload validators |
 
 ## Generated Artifacts
 
@@ -194,6 +199,27 @@ uv run python deployment/example_store_sync.py \
   --location us-central1 \
   --dataset data/example_store/manual_examples.v1.jsonl \
   --example-store-name projects/<PROJECT_NUMBER>/locations/us-central1/exampleStores/<EXAMPLE_STORE_ID>
+```
+
+### Restricted Code Execution (A6)
+
+`run_analytical_code` executes only allowlisted analytical templates in Agent
+Engine Code Execution sandboxes:
+
+- **Gate**: `F1_CODE_EXECUTION_ENABLED`
+- **Tasks**: `summary_stats`, `what_if_points`, `distribution_bins`
+- **Security model**: no arbitrary code input; payload is validated and mapped to predefined templates
+- **Region**: `us-central1` only
+- **Limits**: bounded payload size (`F1_CODE_EXECUTION_MAX_ROWS`) and sandbox TTL
+
+Example local env snippet:
+
+```bash
+F1_CODE_EXECUTION_ENABLED=true
+F1_CODE_EXECUTION_LOCATION=us-central1
+F1_CODE_EXECUTION_AGENT_ENGINE_NAME=projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>
+F1_CODE_EXECUTION_SANDBOX_TTL_SECONDS=3600
+F1_CODE_EXECUTION_MAX_ROWS=500
 ```
 
 ### Managed Sessions (A2)

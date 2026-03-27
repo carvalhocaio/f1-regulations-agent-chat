@@ -95,6 +95,7 @@ class SchemaTests(unittest.TestCase):
         self.assertIn("query_f1_history", names)
         self.assertIn("search_regulations", names)
         self.assertIn("google_search_agent", names)
+        self.assertIn("run_analytical_code", names)
 
     def test_examples_to_jsonl(self):
         examples = [
@@ -117,9 +118,7 @@ class SchemaTests(unittest.TestCase):
         """Ensure no example contains functionCall/functionResponse parts."""
         ex = build_example(
             user_message="Q",
-            function_calls=[
-                {"name": "search_regulations", "args": {"query": "DRS"}}
-            ],
+            function_calls=[{"name": "search_regulations", "args": {"query": "DRS"}}],
             function_responses=[
                 {
                     "name": "search_regulations",

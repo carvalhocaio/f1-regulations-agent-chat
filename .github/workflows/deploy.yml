@@ -11,6 +11,8 @@ env:
   STAGING_BUCKET: ${{ secrets.GCP_STAGING_BUCKET }}
   SA_EMAIL: ${{ secrets.GCP_SA_EMAIL }}
   RAG_CORPUS: ${{ secrets.GCP_RAG_CORPUS }}
+  CODE_EXECUTION_ENABLED: ${{ secrets.GCP_CODE_EXECUTION_ENABLED }}
+  CODE_EXECUTION_AGENT_ENGINE_NAME: ${{ secrets.GCP_CODE_EXECUTION_AGENT_ENGINE_NAME }}
   ARTIFACTS_BUCKET: "${{ secrets.GCP_PROJECT_ID }}-artifacts"
 
 jobs:
@@ -67,6 +69,22 @@ jobs:
 
       - name: Deploy to Agent Engine
         run: |
+          CODE_EXECUTION_ARGS=()
+          if [ "${CODE_EXECUTION_ENABLED}" = "true" ]; then
+            CODE_EXECUTION_ARGS+=(
+              --code-execution-enabled
+              --code-execution-location "us-central1"
+              --code-execution-sandbox-ttl-seconds 3600
+              --code-execution-max-rows 500
+            )
+
+            if [ -n "${CODE_EXECUTION_AGENT_ENGINE_NAME}" ]; then
+              CODE_EXECUTION_ARGS+=(
+                --code-execution-agent-engine-name "${CODE_EXECUTION_AGENT_ENGINE_NAME}"
+              )
+            fi
+          fi
+
           uv run python deployment/deploy.py \
             --project-id "$PROJECT_ID" \
             --location "$REGION" \
@@ -75,12 +93,19 @@ jobs:
             --service-account "$SA_EMAIL" \
             --rag-backend "auto" \
             --rag-corpus "$RAG_CORPUS" \
-            --rag-location "${RAG_REGION:-$REGION}"
+            --rag-location "${RAG_REGION:-$REGION}" \
+            "${CODE_EXECUTION_ARGS[@]}"
           # Optional A5 flags (manual rollout):
           #   --example-store-enabled \
           #   --example-store-name "projects/<PROJECT_NUMBER>/locations/us-central1/exampleStores/<EXAMPLE_STORE_ID>" \
           #   --example-store-top-k 3 \
           #   --example-store-min-score 0.65
+          # Optional A6 flags (manual rollout):
+          #   --code-execution-enabled \
+          #   --code-execution-location "us-central1" \
+          #   --code-execution-agent-engine-name "projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>" \
+          #   --code-execution-sandbox-ttl-seconds 3600 \
+          #   --code-execution-max-rows 500
 
       - name: Smoke test deployed agent (read-only)
         run: |

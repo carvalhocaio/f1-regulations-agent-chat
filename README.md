@@ -16,6 +16,7 @@ Built with [Google ADK](https://google.github.io/adk-docs/) and powered by Gemin
 - `query_f1_history_template` — pre-built SQL templates for common F1 queries (champions, career stats, records, standings, head-to-head)
 - `query_f1_history` — read-only SQL access to historical F1 data
 - `google_search_agent` — live web retrieval for current season/news
+- `run_analytical_code` — restricted Code Execution sandbox for advanced analytics (feature-flagged)
 - `search` (compatibility alias) — guided fallback if the model hallucinates a generic tool name
 
 **Intelligence layer:**
@@ -24,6 +25,7 @@ Built with [Google ADK](https://google.github.io/adk-docs/) and powered by Gemin
 - **Session corrections** — detects when users correct the agent (PT/EN) and avoids repeating mistakes
 - **Managed sessions (A2)** — supports Vertex AI Sessions (`user_id` + `session_id`) with TTL for persistent context
 - **Dynamic few-shot via Example Store (A5)** — retrieves similar examples of real errors at runtime (feature-flagged)
+- **Code Execution sandbox (A6, restricted mode)** — allowlisted analytical templates for simulations/statistics (feature-flagged)
 - **RAG Engine rollout (A4)** — `search_regulations` supports phased routing (`auto|local|vertex`) with automatic fallback to local hybrid RAG
 - **Runtime temporal context** — injects current UTC date/year on every request to avoid stale year assumptions after deploy
 - **Temporal reasoning** — automatically splits questions: `1950-2024` via SQLite, `2025+` via web search
@@ -58,6 +60,9 @@ ADK Agent (Gemini)
     |
     |-- Current/live ----------> google_search_agent(request)
     |                             -> Web results
+    |
+    |-- Advanced analytics ----> run_analytical_code(task_type, payload)
+    |                             -> Agent Engine sandbox (restricted templates)
     |
     v
 [detect_corrections] --> Store if user corrected the agent
@@ -131,6 +136,13 @@ GOOGLE_API_KEY=your-key-here
 # F1_EXAMPLE_STORE_NAME=projects/<PROJECT_NUMBER>/locations/us-central1/exampleStores/<EXAMPLE_STORE_ID>
 # F1_EXAMPLE_STORE_TOP_K=3
 # F1_EXAMPLE_STORE_MIN_SCORE=0.65
+
+# Optional (A6 restricted Code Execution). Keep disabled by default.
+# F1_CODE_EXECUTION_ENABLED=false
+# F1_CODE_EXECUTION_LOCATION=us-central1
+# F1_CODE_EXECUTION_AGENT_ENGINE_NAME=projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>
+# F1_CODE_EXECUTION_SANDBOX_TTL_SECONDS=3600
+# F1_CODE_EXECUTION_MAX_ROWS=500
 EOF
 
 # 4. Add source data to docs/ (FIA PDFs + Kaggle CSVs)
@@ -181,6 +193,7 @@ f1-regulations-agent-chat/
 │   ├── runner.py               # ADK runner wiring for managed/local sessions
 │   ├── sessions.py             # user_id/session_id normalization helpers
 │   ├── cache.py                # SemanticCache (FAISS + SQLite, TTL-based)
+│   ├── code_execution.py       # Restricted analytical sandbox adapter (A6)
 │   ├── tools.py                # Agent tools (regulations, history, search)
 │   ├── rag.py                  # PDF loading, chunking, FAISS + BM25 hybrid search
 │   ├── rag_vertex.py           # Vertex RAG adapter (A4 phased externalization)

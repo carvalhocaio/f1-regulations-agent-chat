@@ -234,6 +234,33 @@ def main():
         default=0.65,
         help="Minimum similarity score required for dynamic examples",
     )
+    parser.add_argument(
+        "--code-execution-enabled",
+        action="store_true",
+        help="Enable restricted analytical Code Execution sandbox tool",
+    )
+    parser.add_argument(
+        "--code-execution-agent-engine-name",
+        default="",
+        help="Optional Agent Engine resource name used by sandbox API",
+    )
+    parser.add_argument(
+        "--code-execution-location",
+        default="us-central1",
+        help="Code Execution region (currently us-central1)",
+    )
+    parser.add_argument(
+        "--code-execution-sandbox-ttl-seconds",
+        type=int,
+        default=3600,
+        help="Sandbox TTL for analytical code execution",
+    )
+    parser.add_argument(
+        "--code-execution-max-rows",
+        type=int,
+        default=500,
+        help="Max row-like items accepted by analytical payload validators",
+    )
     args = parser.parse_args()
 
     if args.example_store_enabled and not args.example_store_name:
@@ -267,6 +294,13 @@ def main():
         "F1_EXAMPLE_STORE_NAME": args.example_store_name,
         "F1_EXAMPLE_STORE_TOP_K": str(max(1, args.example_store_top_k)),
         "F1_EXAMPLE_STORE_MIN_SCORE": str(args.example_store_min_score),
+        "F1_CODE_EXECUTION_ENABLED": "true" if args.code_execution_enabled else "false",
+        "F1_CODE_EXECUTION_AGENT_ENGINE_NAME": args.code_execution_agent_engine_name,
+        "F1_CODE_EXECUTION_LOCATION": args.code_execution_location,
+        "F1_CODE_EXECUTION_SANDBOX_TTL_SECONDS": str(
+            max(300, args.code_execution_sandbox_ttl_seconds)
+        ),
+        "F1_CODE_EXECUTION_MAX_ROWS": str(max(10, args.code_execution_max_rows)),
     }
 
     if args.rag_corpus:

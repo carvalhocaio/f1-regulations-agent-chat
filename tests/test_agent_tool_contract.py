@@ -16,6 +16,12 @@ class AgentToolContractTests(unittest.TestCase):
         self.assertIn("search", instruction)
         self.assertIn("fallback", instruction.lower())
 
+    def test_instruction_mentions_analytical_sandbox_tool(self):
+        instruction = root_agent.instruction
+
+        self.assertIn("run_analytical_code", instruction)
+        self.assertIn("summary_stats", instruction)
+
     def test_instruction_loaded_from_template(self):
         instruction = root_agent.instruction
 
@@ -36,6 +42,7 @@ class AgentToolContractTests(unittest.TestCase):
         self.assertIn("search_regulations", tool_names)
         self.assertIn("query_f1_history", tool_names)
         self.assertIn("query_f1_history_template", tool_names)
+        self.assertIn("run_analytical_code", tool_names)
         self.assertIn("search", tool_names)
         self.assertIn("google_search", tool_names)
 
