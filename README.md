@@ -1,292 +1,225 @@
 # F1 Regulations Agent Chat
 
 AI assistant for Formula 1 that combines:
-- Official **FIA 2026 regulations** (hybrid RAG over PDFs)
-- Historical **F1 World Championship data (1950-2024)** in SQLite
+- Official FIA 2026 regulations (hybrid RAG over PDFs)
+- Historical F1 World Championship data (1950-2024) in SQLite
 
-Built with Gemini + Vertex AI SDK and powered by local runtime wiring.
+This repository is based on
+[f1-regulations-agent](https://github.com/carvalhocaio/f1-regulations-agent),
+the original CLI project.
 
-> This project is based on [f1-regulations-agent](https://github.com/carvalhocaio/f1-regulations-agent), the original CLI version.
+## Project Status (March 27, 2026)
 
-## Core Capabilities
+- The runtime is actively maintained around `f1_agent/` and deployment scripts.
+- The old local ADK web UI entrypoint was removed.
+- `make run` does not start a server; it prints local validation guidance.
+- Production target is Vertex AI Agent Engine.
 
-**Tools:**
-- `search_regulations` — hybrid retrieval (FAISS semantic + BM25 keyword) over FIA 2026 Sections A-F
-- `query_f1_history_template` — pre-built SQL templates for common F1 queries (champions, career stats, records, standings, head-to-head)
-- `query_f1_history` — read-only SQL access to historical F1 data
-- `run_analytical_code` — restricted Code Execution sandbox for advanced analytics (feature-flagged)
+## Core Runtime Capabilities
 
-**Intelligence layer:**
-- **Model routing** — simple queries go to Flash (or fine-tuned Flash), complex ones stay on Pro
-- **Semantic cache** — near-instant responses for repeated/similar questions (cosine similarity > 0.92)
-- **Session corrections** — detects when users correct the agent (PT/EN) and avoids repeating mistakes
-- **Local sessions (A2)** — in-memory session identity (`user_id` + `session_id`) for runtime context
-- **Dynamic few-shot via Example Store (A5)** — retrieves similar examples of real errors at runtime (feature-flagged)
-- **Code Execution sandbox (A6, restricted mode)** — allowlisted analytical templates for simulations/statistics (feature-flagged)
-- **RAG Engine rollout (A4)** — `search_regulations` supports phased routing (`auto|local|vertex`) with automatic fallback to local hybrid RAG
-- **Standardized resilience** — exponential backoff + jitter + circuit breaker for transient 429/503 failures in runtime/tools
-- **Strict tool contract** — no compatibility alias, stricter argument validation, and structured tool errors for invalid calls
-- **Tool validation telemetry** — per-tool/per-error counters in runtime logs (e.g. `tool_validation_error`)
-- **Runtime temporal context** — injects current UTC date/year on every request to avoid stale year assumptions after deploy
-- **Temporal reasoning** — resolves relative dates and enforces local DB coverage limits (`1950-2024`)
+### Tools
 
-## How It Works
+- `search_regulations`
+  - Hybrid search over FIA 2026 docs (FAISS semantic + BM25 keyword).
+  - Backend mode via `F1_RAG_BACKEND`: `auto`, `local`, `vertex`, `vector_search`.
+- `query_f1_history_template`
+  - Uses 15 curated SQL templates for common historical queries.
+- `query_f1_history`
+  - Read-only raw SQL over local SQLite historical DB (SELECT-only; row cap 100).
+- `run_analytical_code`
+  - Restricted analytical sandbox with allowlisted task types:
+    `summary_stats`, `what_if_points`, `distribution_bins`.
+  - Feature-flagged (`F1_CODE_EXECUTION_ENABLED`).
+
+### Intelligence Layer
+
+- Model routing (`route_model`): simple routes to Flash/tuned Flash, complex stays on Pro.
+- Semantic cache (`check_cache` / `store_cache`) with similarity-based retrieval.
+- Runtime temporal context injection to prevent stale year assumptions.
+- Relative-time resolution and local DB coverage enforcement (1950-2024).
+- Session corrections memory (PT/EN pattern detection and reinjection).
+- Dynamic few-shot injection from Example Store (optional).
+- Structured response contracts and schema validation (optional/route-driven).
+- Grounding policy callback (`observe` or `enforce` mode).
+- Token preflight check with CountTokens API and progressive context truncation.
+- Resilience layer: retries + exponential backoff/jitter + circuit breaker.
+
+## Request Flow
 
 ```text
 User question
     |
     v
-[check_cache] -----> Cache HIT? Return cached answer (<200ms)
-    |
-[inject_runtime_temporal_context] --> Inject current UTC date/year (per request)
-    |
-[inject_corrections] --> Append session corrections to prompt
-    |
-[inject_dynamic_examples] --> Retrieve similar corrected errors from Example Store
-    |
-[route_model] -----> Simple? -> Flash/Tuned | Complex? -> Pro
-    |
-    v
-Agent Runtime (Gemini)
-    |
-    |-- Regulations -----------> search_regulations(query)
-    |                             -> FAISS + BM25 hybrid search
-    |
-    |-- Historical/stats ------> query_f1_history_template(name, params)
-    |                             -> Pre-built SQL templates
-    |
-    |-- Free-form SQL ---------> query_f1_history(sql_query)
-    |                             -> SQLite (1950-2024, SELECT only)
-    |
-    |-- Advanced analytics ----> run_analytical_code(task_type, payload)
-    |                             -> Agent Engine sandbox (restricted templates)
+before_model callbacks:
+  1) check_cache
+  2) inject_runtime_temporal_context
+  3) inject_corrections
+  4) inject_dynamic_examples
+  5) route_model
+  6) apply_throughput_request_type
+  7) apply_grounding_policy
+  8) apply_response_contract
+  9) preflight_token_check
     |
     v
-[detect_corrections] --> Store if user corrected the agent
-    |
-[store_cache] --------> Cache the answer for future reuse
-                         (time-sensitive/out-of-coverage queries are not reused via cache)
+LLM + tools:
+  - search_regulations
+  - query_f1_history_template
+  - query_f1_history
+  - run_analytical_code (optional)
     |
     v
-Unified answer + sources
+after_model callbacks:
+  - log_context_cache_metrics
+  - validate_structured_response
+  - validate_grounding_outcome
+  - detect_corrections
+  - store_cache
 ```
 
-## Session Contract (No Login)
+## Session Contract (No Login Clients)
 
-For clients without authentication, keep sessions persistent by sending:
+For persistent context across requests:
 
-- `client_id` — stable browser/device id stored in localStorage or cookie
-- `user_id` — optional; if absent, backend derives deterministic anonymous id (`anon-<hash(client_id)>`)
-- `session_id` — optional on first call; required on follow-ups to resume context
+- Send stable `client_id` from browser/device.
+- Optionally send `user_id`; otherwise backend derives `anon-<hash(client_id)>`.
+- On first request, omit `session_id`.
+- Store returned `session_id` and send it on subsequent calls.
 
-Recommended flow:
+Sessions are local in-memory (`InMemorySessionService`).
 
-1. First call: send `client_id`, omit `session_id`
-2. Backend creates local in-memory session and returns `session_id`
-3. Client stores `session_id` and sends it on subsequent calls
+## WebSocket Streaming Contract
 
-This enables cross-request persistence for callback state (for example, correction memory).
+Bridge endpoint:
 
-## WebSocket Streaming Contract (P7)
+- `ws://<host>:8001/ws/chat`
 
-Bridge endpoint: `ws://<host>:8001/ws/chat`
+Client to server message types:
 
-Client -> server messages:
 - `{"type":"input","input":"...","request_id":"...","user_id":"...","session_id":"..."}`
 - `{"type":"abort"}`
 - `{"type":"ping"}`
 - `{"type":"close"}`
 
-Optional structured response control (critical routes only):
-- include `"response_contract_id"` in `input` messages when machine-readable JSON is required
-- supported contract IDs:
+Optional for structured JSON outputs on selected routes:
+
+- Include `"response_contract_id"` in `input` message.
+- Supported IDs:
   - `sources_block_v1`
   - `comparison_table_v1`
-- runtime validates JSON and schema after model generation; invalid payloads are replaced by contract-compatible fallback JSON and logged as `structured_response_validation`
 
-Server -> client events (`stream_protocol_version=v1`):
-- `turn_start`
-- `delta`
-- `turn_end`
-- `error`
+Server event envelope:
 
-## Stack
+- `stream_protocol_version="v1"`
+- Event types:
+  - `turn_start`
+  - `delta`
+  - `tool_status`
+  - `turn_end`
+  - `error`
 
-- [Gemini 2.5 Pro / Flash](https://deepmind.google/technologies/gemini/) — LLM with dynamic routing
-- [LangChain](https://python.langchain.com/) + [PyMuPDF](https://pymupdf.readthedocs.io/) — PDF ingestion and chunking
-- [FAISS](https://github.com/facebookresearch/faiss) + [BM25](https://github.com/dorianbrown/rank_bm25) — hybrid vector + keyword search with reciprocal rank fusion
-- [SQLite](https://www.sqlite.org/) — historical F1 database with pre-built query templates
-- Vertex AI Agent Engine — production deployment target
-- Vertex AI SFT — supervised fine-tuning pipeline for domain-specific Flash model
-- Terraform + GitHub Actions — infrastructure and CI/CD
-
-## Quick Start
+## Quick Start (Local)
 
 ```bash
-# 1. Install uv
+# 1) Install uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 2. Clone and install
+# 2) Clone and install dependencies
 git clone https://github.com/carvalhocaio/f1-regulations-agent-chat
 cd f1-regulations-agent-chat
 uv sync
 
-# 3. Configure .env
+# 3) Configure env
 cat > .env <<'EOF'
-GOOGLE_API_KEY=your-key-here
+# Required (either variable works; GEMINI_API_KEY is checked first)
+GOOGLE_API_KEY=your-gemini-api-key
+# GEMINI_API_KEY=your-gemini-api-key
 
-# Optional (recommended default for local embedding support)
+# Optional local default
 # GEMINI_EMBEDDING_MODEL=models/gemini-embedding-2-preview
 
-# Optional (production only). Keep unset locally unless you have
-# access to a valid Vertex tuned endpoint.
-# F1_TUNED_MODEL=projects/<PROJECT_NUMBER>/locations/us-central1/endpoints/<ENDPOINT_ID>
-
-# Optional (A4 phased rollout). Keep local by default.
-# F1_RAG_BACKEND=local           # local|auto|vertex|vector_search
-# F1_RAG_CORPUS=projects/<PROJECT_NUMBER>/locations/us-central1/ragCorpora/<RAG_CORPUS_ID>
-# F1_RAG_PROJECT_ID=<PROJECT_ID>
-# F1_RAG_LOCATION=us-central1
-# F1_RAG_TOP_K=5
-# F1_RAG_VECTOR_DISTANCE_THRESHOLD=0.5
-# F1_VECTOR_SEARCH_PARENT=projects/<PROJECT_ID>/locations/us-central1/collections/<COLLECTION_ID>
-# F1_VECTOR_SEARCH_FIELD=embedding
-# F1_VECTOR_SEARCH_TOP_K=5
-# F1_VECTOR_SEARCH_OUTPUT_FIELDS=data_fields,metadata_fields
-
-# Optional (A5 dynamic few-shot). Keep disabled by default.
+# Optional runtime toggles
+# F1_RAG_BACKEND=auto
 # F1_EXAMPLE_STORE_ENABLED=false
-# F1_EXAMPLE_STORE_NAME=projects/<PROJECT_NUMBER>/locations/us-central1/exampleStores/<EXAMPLE_STORE_ID>
-# F1_EXAMPLE_STORE_TOP_K=3
-# F1_EXAMPLE_STORE_MIN_SCORE=0.65
-
-# Optional (A6 restricted Code Execution). Keep disabled by default.
 # F1_CODE_EXECUTION_ENABLED=false
-# F1_CODE_EXECUTION_LOCATION=us-central1
-# F1_CODE_EXECUTION_AGENT_ENGINE_NAME=projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>
-# F1_CODE_EXECUTION_SANDBOX_TTL_SECONDS=3600
-# F1_CODE_EXECUTION_MAX_ROWS=500
-
-# Optional (P6 throughput routing). Default is DSQ/pay-as-you-go.
-# F1_VERTEX_LLM_REQUEST_TYPE=shared  # shared|dedicated
-
-# Optional (Q3 structured outputs). Enabled by default.
 # F1_STRUCTURED_RESPONSE_ENABLED=true
-
-# Optional (P2 resilience defaults tuned for chat fail-fast).
-# F1_LLM_RETRY_ENABLED=true
-# F1_LLM_RETRY_ATTEMPTS=3
-# F1_LLM_RETRY_INITIAL_DELAY_S=1.0
-# F1_LLM_RETRY_MAX_DELAY_S=8.0
-# F1_LLM_RETRY_EXP_BASE=2.0
-# F1_LLM_RETRY_JITTER=0.35
-# F1_RETRY_ENABLED=true
-# F1_RETRY_MAX_ATTEMPTS=3
-# F1_RETRY_INITIAL_DELAY_S=0.4
-# F1_RETRY_MAX_DELAY_S=4.0
-# F1_RETRY_EXP_BASE=2.0
-# F1_RETRY_JITTER=0.35
-# F1_CIRCUIT_ENABLED=true
-# F1_CIRCUIT_FAILURE_THRESHOLD=5
-# F1_CIRCUIT_OPEN_SECONDS=20
+# F1_GROUNDING_POLICY_ENABLED=true
+# F1_GROUNDING_POLICY_MODE=observe
+# F1_VERTEX_LLM_REQUEST_TYPE=shared
+# F1_PREFLIGHT_TOKEN_CHECK_ENABLED=false
 EOF
 
-# 4. Add source data to docs/ (FIA PDFs + Kaggle CSVs)
+# 4) Add source data to docs/
+# - FIA 2026 regulation PDFs (Sections A-F)
+# - Kaggle CSV folder "Formula 1 World Championship (1950 - 2024)"
 
-# 5. Build artifacts
+# 5) Build artifacts
 uv run build_index.py
 
-# 6. Validate locally
-make run
+# 6) Validate locally
+uv run python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-`make run` prints runtime guidance and the recommended validation command.
+`make run` is intentionally informational and prints the same guidance.
 
-For detailed setup instructions, see [DEVELOPMENT.md](./DEVELOPMENT.md).
+For full local setup details, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 
-## Example Questions
+## Configuration Reference (Most Used)
 
-**Regulations:**
-- "What is the maximum power unit energy deployment per lap?"
-- "What are the dimensions allowed for the front wing?"
-- "What is the cost cap for F1 teams?"
+### Core
 
-**Historical:**
-- "How many wins did Ayrton Senna have?"
-- "Which constructor has the most championships?"
-- "Compare Hamilton and Schumacher race wins."
+- `GOOGLE_API_KEY` / `GEMINI_API_KEY`: API key for Gemini.
+- `GEMINI_EMBEDDING_MODEL`: embedding model used by RAG/cache.
+- `F1_TUNED_MODEL`: optional tuned Flash endpoint for routing.
 
-**Cross-source:**
-- "Compare Schumacher's 2004 dominance with 2026 regulation changes."
-- "Show the last 10 drivers' champions."
+### Retrieval
 
-> Note: the local historical database covers seasons up to 2024.
+- `F1_RAG_BACKEND`: `auto|local|vertex|vector_search`.
+- `F1_RAG_CORPUS`, `F1_RAG_PROJECT_ID`, `F1_RAG_LOCATION`, `F1_RAG_TOP_K`.
+- `F1_RAG_VECTOR_DISTANCE_THRESHOLD`.
+- `F1_VECTOR_SEARCH_PARENT`, `F1_VECTOR_SEARCH_FIELD`,
+  `F1_VECTOR_SEARCH_TOP_K`, `F1_VECTOR_SEARCH_OUTPUT_FIELDS`.
 
-## SQL Tool Constraints
+### Optional Feature Flags
 
-`query_f1_history` is intentionally restricted:
-- Only `SELECT` queries are allowed
-- Write operations are blocked (`INSERT`, `UPDATE`, `DELETE`, `DROP`, etc.)
-- Results are capped at `100` rows
+- `F1_EXAMPLE_STORE_ENABLED`, `F1_EXAMPLE_STORE_NAME`,
+  `F1_EXAMPLE_STORE_TOP_K`, `F1_EXAMPLE_STORE_MIN_SCORE`.
+- `F1_CODE_EXECUTION_ENABLED`, `F1_CODE_EXECUTION_LOCATION`,
+  `F1_CODE_EXECUTION_AGENT_ENGINE_NAME`,
+  `F1_CODE_EXECUTION_SANDBOX_TTL_SECONDS`, `F1_CODE_EXECUTION_MAX_ROWS`.
+- `F1_STRUCTURED_RESPONSE_ENABLED`.
+- `F1_GROUNDING_POLICY_ENABLED`, `F1_GROUNDING_POLICY_MODE`,
+  `F1_GROUNDING_TIME_SENSITIVE_SOURCE`.
+- `F1_PREFLIGHT_TOKEN_CHECK_ENABLED`, `F1_PREFLIGHT_TOKEN_THRESHOLD`,
+  `F1_PREFLIGHT_TOKEN_HARD_LIMIT`.
+- `F1_VERTEX_LLM_REQUEST_TYPE` (`shared|dedicated`).
 
-## Project Structure
+### Resilience and Cache
 
-```text
-f1-regulations-agent-chat/
-├── f1_agent/
-│   ├── agent.py                # Agent definition, tools, and callbacks
-│   ├── callbacks.py            # Model routing, semantic cache, session corrections
-│   ├── runner.py               # Runner wiring for local in-memory sessions
-│   ├── sessions.py             # user_id/session_id normalization helpers
-│   ├── streaming_protocol.py    # Stream event envelope (`stream_protocol_version=v1`)
-│   ├── bidi.py                 # Helpers to convert bidi SDK events into protocol events
-│   ├── websocket_bridge.py      # Framework-agnostic WebSocket <-> bidi bridge loop
-│   ├── cache.py                # SemanticCache (FAISS + SQLite, TTL-based)
-│   ├── code_execution.py       # Restricted analytical sandbox adapter (A6)
-│   ├── tools.py                # Agent tools (regulations, history, analytics)
-│   ├── rag.py                  # PDF loading, chunking, FAISS + BM25 hybrid search
-│   ├── rag_vertex.py           # Vertex RAG adapter (A4 phased externalization)
-│   ├── rag_vector_search.py    # Vertex Vector Search adapter (P8 candidate backend)
-│   ├── db.py                   # SQLite schema/build/query helpers
-│   ├── sql_templates.py        # 15 pre-built SQL templates for common queries
-│   ├── prompts/
-│   │   └── system_instruction_static.txt  # Externalized system prompt with few-shot examples
-│   └── fine_tuning/
-│       ├── schema.py           # Vertex AI SFT dataset format helpers
-│       ├── generate_dataset.py # Auto-generates Q&A pairs from real F1 database
-│       └── tune.py             # Launches SFT job on Vertex AI
-├── tests/                      # Unit tests (routing, cache, tools, sessions, temporal logic)
-├── deployment/
-│   ├── deploy.py               # Vertex AI Agent Engine deploy script
-│   ├── smoke_bidi_agent_engine.py # Bidi streaming smoke test (P7)
-│   ├── benchmark_streaming_modes.py # Compare TTFT across query/streaming modes
-│   ├── benchmark_retrieval_backends.py # Compare local/vertex/vector_search retrieval
-│   ├── vector_search_bootstrap.py # Create Vector Search collection and ingest chunks
-│   ├── websocket_bidi_server.py # FastAPI WebSocket bridge for interactive bidi chat
-│   ├── rag_engine_ingest.py    # Vertex RAG corpus create/import helper
-│   └── terraform/              # GCP infrastructure as code
-├── docs/                       # FIA PDFs + Kaggle CSV folder (input data)
-├── vector_store/               # Generated FAISS artifacts (gitignored)
-├── f1_data/                    # Generated SQLite artifact (gitignored)
-├── f1_cache/                   # Semantic cache data (runtime, gitignored)
-├── build_index.py              # Builds vector store + SQLite DB
-├── .github/workflows/
-│   ├── ci.yml                  # PR checks (ruff + tests)
-│   └── deploy.yml              # Deploy pipeline on push to main
-├── DEPLOY.md                   # Production deployment guide
-├── DEVELOPMENT.md              # Development setup and architecture guide
-├── Makefile
-└── pyproject.toml
-```
+- LLM retry: `F1_LLM_RETRY_*`
+- Tool retry/circuit breaker: `F1_RETRY_*`, `F1_CIRCUIT_*`
+- Semantic cache tuning: `F1_SEMANTIC_CACHE_*`
 
-## Historical Database
+## Data and Generated Artifacts
 
-The SQLite DB contains 14 tables with the following row counts:
+Gitignored runtime/generated directories:
+
+- `vector_store/`: FAISS artifacts from FIA PDFs (`index.faiss`, `index.pkl`)
+- `f1_data/`: SQLite database (`f1_history.db`)
+- `f1_cache/`: semantic cache artifacts created at runtime
+
+Current local DB state:
+
+- Core Kaggle schema tables: 14
+- Additional ingestion/support tables: `api_*` tables are present
+  (`api_entity_map`, `api_drivers_profile`, `api_race_fastestlaps`, etc.)
+
+Core table row counts in the current repository artifact:
 
 | Table | Rows |
 |---|---:|
-| `circuits` | 77 |
-| `constructors` | 212 |
+| `circuits` | 114 |
+| `constructors` | 232 |
 | `drivers` | 861 |
 | `races` | 1,125 |
 | `results` | 26,759 |
@@ -300,16 +233,50 @@ The SQLite DB contains 14 tables with the following row counts:
 | `seasons` | 75 |
 | `status` | 139 |
 
-## Deployment and CI/CD
+## Deployment and CI/CD (Current Workflows)
 
-- **CI** (`.github/workflows/ci.yml`): Runs on PRs — ruff check, format check, unit tests
-- **Deploy** (`.github/workflows/deploy.yml`): Runs on push to `main` with 3 stages — deploy candidate, run Gen AI Evaluation gate (dataset + rubric metrics), then promote to production only when gate passes
+- CI workflow: `.github/workflows/ci.yml`
+  - Trigger: pull requests to `main`
+  - Steps: `uv sync --frozen --extra dev`, `ruff check`,
+    `ruff format --check`, unit tests
+- Deploy workflow: `.github/workflows/deploy.yml`
+  - Trigger: push to `main`
+  - Steps:
+    1. Install deps
+    2. Download `vector_store/` and `f1_data/` artifacts from GCS
+    3. Generate `requirements-deploy.txt` with `uv export`
+    4. Deploy via `deployment/deploy.py`
+    5. Run smoke test via `deployment/smoke_agent_engine.py`
+    6. Upload `deployment_metadata.json` as workflow artifact
 
-For complete production setup (GCP, Terraform, secrets, manual deploy, smoke test):
-- See [DEPLOY.md](./DEPLOY.md)
+For complete production setup, Terraform, secrets, and manual deploy paths,
+see [DEPLOY.md](./DEPLOY.md).
 
-For development setup (local environment, architecture, testing, fine-tuning):
-- See [DEVELOPMENT.md](./DEVELOPMENT.md)
+## Useful Commands
+
+```bash
+# Unit tests
+uv run python -m unittest discover -s tests -p "test_*.py" -v
+
+# Deploy manually (example)
+uv run python deployment/deploy.py --help
+
+# Smoke test deployed agent
+uv run python deployment/smoke_agent_engine.py --help
+
+# Optional bidi smoke test
+uv run python deployment/smoke_bidi_agent_engine.py --help
+
+# Optional local websocket bridge to a deployed agent
+uv run python deployment/websocket_bidi_server.py --help
+```
+
+## Limitations and Notes
+
+- Historical local DB coverage is 1950-2024.
+- Questions requiring 2025+ or live standings/results are outside local DB.
+- `query_f1_history` blocks write statements and limits output row count.
+- Code execution is restricted to allowlisted analytical tasks only.
 
 ## License
 
