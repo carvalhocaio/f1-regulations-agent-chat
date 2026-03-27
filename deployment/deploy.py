@@ -179,6 +179,12 @@ def _is_service_account_actas_error(exc: Exception) -> bool:
     return "permission to act as service_account" in message
 
 
+def _is_invalid_agent_callable_error(exc: Exception) -> bool:
+    """Return true when Agent Engine rejects provided local agent object."""
+    message = str(exc).lower()
+    return "agent_engine has none of the following callable methods" in message
+
+
 def _drop_empty_env_values(env_vars: dict[str, str]) -> dict[str, str]:
     """Return env vars without empty-string values.
 
@@ -470,7 +476,16 @@ def main():
                 config=config,
             )
         except Exception as exc:
-            if args.service_account and _is_service_account_actas_error(exc):
+            if _is_invalid_agent_callable_error(exc):
+                print(
+                    "Warning: local agent object is not directly deployable by this "
+                    "SDK; retrying update with config only."
+                )
+                client.agent_engines.update(
+                    name=existing,
+                    config=config,
+                )
+            elif args.service_account and _is_service_account_actas_error(exc):
                 print(
                     "Warning: missing iam.serviceAccountUser on configured service "
                     "account; retrying update without explicit service_account"
@@ -491,7 +506,13 @@ def main():
                 config=config,
             )
         except Exception as exc:
-            if args.service_account and _is_service_account_actas_error(exc):
+            if _is_invalid_agent_callable_error(exc):
+                raise RuntimeError(
+                    "Cannot create a new Agent Engine from the current local agent "
+                    "object. Create the candidate once using a deployable agent "
+                    "entrypoint, then subsequent deploys can update config-only."
+                ) from exc
+            elif args.service_account and _is_service_account_actas_error(exc):
                 print(
                     "Warning: missing iam.serviceAccountUser on configured service "
                     "account; retrying create without explicit service_account"

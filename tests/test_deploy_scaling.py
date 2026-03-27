@@ -70,5 +70,19 @@ class BuildAgentEngineConfigTests(unittest.TestCase):
         self.assertEqual(payload.get("container_concurrency"), 18)
 
 
+class DeployErrorClassifierTests(unittest.TestCase):
+    def test_detects_invalid_agent_callable_error(self):
+        exc = TypeError(
+            "agent_engine has none of the following callable methods: query"
+        )
+
+        self.assertTrue(deploy._is_invalid_agent_callable_error(exc))
+
+    def test_ignores_unrelated_errors(self):
+        exc = ValueError("something else")
+
+        self.assertFalse(deploy._is_invalid_agent_callable_error(exc))
+
+
 if __name__ == "__main__":
     unittest.main()
