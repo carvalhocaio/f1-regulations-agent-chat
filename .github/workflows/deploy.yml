@@ -166,6 +166,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
+      - name: Install Vertex evaluation extras
+        run: uv pip install "google-cloud-aiplatform[evaluation]>=1.141.0"
+
       - name: Download candidate deployment metadata
         uses: actions/download-artifact@v7
         with:
@@ -219,7 +222,7 @@ jobs:
           path: |
             eval_report.json
             eval_gate_result.json
-            live_failures.raw.$GITHUB_SHA.jsonl
+            live_failures.raw.${{ github.sha }}.jsonl
 
       - name: Publish evaluation report to GCS
         run: |
