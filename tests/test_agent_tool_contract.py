@@ -61,14 +61,28 @@ class AgentToolContractTests(unittest.TestCase):
     def test_before_model_callback_includes_dynamic_examples(self):
         callback_names = [cb.__name__ for cb in root_agent.before_model_callback]
 
+        self.assertIn("inject_long_term_memories", callback_names)
         self.assertIn("inject_dynamic_examples", callback_names)
         self.assertLess(
             callback_names.index("inject_corrections"),
+            callback_names.index("inject_long_term_memories"),
+        )
+        self.assertLess(
+            callback_names.index("inject_long_term_memories"),
             callback_names.index("inject_dynamic_examples"),
         )
         self.assertLess(
             callback_names.index("inject_dynamic_examples"),
             callback_names.index("route_model"),
+        )
+
+    def test_after_model_callback_includes_memory_sync(self):
+        callback_names = [cb.__name__ for cb in root_agent.after_model_callback]
+
+        self.assertIn("sync_memory_bank", callback_names)
+        self.assertLess(
+            callback_names.index("detect_corrections"),
+            callback_names.index("sync_memory_bank"),
         )
 
 

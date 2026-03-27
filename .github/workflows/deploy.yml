@@ -11,6 +11,8 @@ env:
   STAGING_BUCKET: ${{ secrets.GCP_STAGING_BUCKET }}
   SA_EMAIL: ${{ secrets.GCP_SA_EMAIL }}
   RAG_CORPUS: ${{ secrets.GCP_RAG_CORPUS }}
+  MEMORY_BANK_ENABLED: ${{ secrets.GCP_MEMORY_BANK_ENABLED }}
+  MEMORY_BANK_AGENT_ENGINE_NAME: ${{ secrets.GCP_MEMORY_BANK_AGENT_ENGINE_NAME }}
   CODE_EXECUTION_ENABLED: ${{ secrets.GCP_CODE_EXECUTION_ENABLED }}
   CODE_EXECUTION_AGENT_ENGINE_NAME: ${{ secrets.GCP_CODE_EXECUTION_AGENT_ENGINE_NAME }}
   ARTIFACTS_BUCKET: "${{ secrets.GCP_PROJECT_ID }}-artifacts"
@@ -69,6 +71,22 @@ jobs:
 
       - name: Deploy to Agent Engine
         run: |
+          MEMORY_BANK_ARGS=()
+          if [ "${MEMORY_BANK_ENABLED}" = "true" ]; then
+            MEMORY_BANK_ARGS+=(
+              --memory-bank-enabled
+              --memory-bank-max-facts 5
+              --memory-bank-fetch-limit 20
+              --memory-bank-generate-on-correction-only
+            )
+
+            if [ -n "${MEMORY_BANK_AGENT_ENGINE_NAME}" ]; then
+              MEMORY_BANK_ARGS+=(
+                --memory-bank-agent-engine-name "${MEMORY_BANK_AGENT_ENGINE_NAME}"
+              )
+            fi
+          fi
+
           CODE_EXECUTION_ARGS=()
           if [ "${CODE_EXECUTION_ENABLED}" = "true" ]; then
             CODE_EXECUTION_ARGS+=(
@@ -94,6 +112,7 @@ jobs:
             --rag-backend "auto" \
             --rag-corpus "$RAG_CORPUS" \
             --rag-location "${RAG_REGION:-$REGION}" \
+            "${MEMORY_BANK_ARGS[@]}" \
             "${CODE_EXECUTION_ARGS[@]}"
           # Optional A5 flags (manual rollout):
           #   --example-store-enabled \
@@ -106,6 +125,12 @@ jobs:
           #   --code-execution-agent-engine-name "projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>" \
           #   --code-execution-sandbox-ttl-seconds 3600 \
           #   --code-execution-max-rows 500
+          # Optional A3 flags (manual rollout):
+          #   --memory-bank-enabled \
+          #   --memory-bank-agent-engine-name "projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>" \
+          #   --memory-bank-max-facts 5 \
+          #   --memory-bank-fetch-limit 20 \
+          #   --memory-bank-generate-on-correction-only
 
       - name: Smoke test deployed agent (read-only)
         run: |

@@ -235,6 +235,34 @@ def main():
         help="Minimum similarity score required for dynamic examples",
     )
     parser.add_argument(
+        "--memory-bank-enabled",
+        action="store_true",
+        help="Enable long-term Memory Bank retrieval and generation",
+    )
+    parser.add_argument(
+        "--memory-bank-agent-engine-name",
+        default="",
+        help="Optional Agent Engine resource name for Memory Bank API calls",
+    )
+    parser.add_argument(
+        "--memory-bank-max-facts",
+        type=int,
+        default=5,
+        help="Maximum memory facts injected per request",
+    )
+    parser.add_argument(
+        "--memory-bank-fetch-limit",
+        type=int,
+        default=20,
+        help="Maximum memories retrieved before filtering",
+    )
+    parser.add_argument(
+        "--memory-bank-generate-on-correction-only",
+        action="store_true",
+        default=True,
+        help="Trigger memory generation only on explicit correction turns",
+    )
+    parser.add_argument(
         "--code-execution-enabled",
         action="store_true",
         help="Enable restricted analytical Code Execution sandbox tool",
@@ -294,6 +322,15 @@ def main():
         "F1_EXAMPLE_STORE_NAME": args.example_store_name,
         "F1_EXAMPLE_STORE_TOP_K": str(max(1, args.example_store_top_k)),
         "F1_EXAMPLE_STORE_MIN_SCORE": str(args.example_store_min_score),
+        "F1_MEMORY_BANK_ENABLED": "true" if args.memory_bank_enabled else "false",
+        "F1_MEMORY_BANK_PROJECT_ID": args.project_id,
+        "F1_MEMORY_BANK_LOCATION": args.location,
+        "F1_MEMORY_BANK_AGENT_ENGINE_NAME": args.memory_bank_agent_engine_name,
+        "F1_MEMORY_BANK_MAX_FACTS": str(max(1, args.memory_bank_max_facts)),
+        "F1_MEMORY_BANK_FETCH_LIMIT": str(max(1, args.memory_bank_fetch_limit)),
+        "F1_MEMORY_BANK_GENERATE_ON_CORRECTION_ONLY": "true"
+        if args.memory_bank_generate_on_correction_only
+        else "false",
         "F1_CODE_EXECUTION_ENABLED": "true" if args.code_execution_enabled else "false",
         "F1_CODE_EXECUTION_AGENT_ENGINE_NAME": args.code_execution_agent_engine_name,
         "F1_CODE_EXECUTION_LOCATION": args.code_execution_location,

@@ -5,8 +5,12 @@ ADK callbacks for model routing, semantic caching, and session corrections.
 - ``check_cache`` / ``store_cache``: semantic answer cache callbacks.
 - ``inject_corrections``: before-model callback that injects stored user
   corrections into the system instruction so the model doesn't repeat mistakes.
+- ``inject_long_term_memories``: before-model callback that injects cross-session
+  Memory Bank facts for the same user.
 - ``detect_corrections``: after-model callback (actually runs on user turn)
   that detects correction patterns and stores them in session state.
+- ``sync_memory_bank``: after-model callback that triggers long-term memory
+  generation from managed session history.
 """
 
 from __future__ import annotations
@@ -21,6 +25,13 @@ from google.genai import types
 
 from f1_agent.cache import SemanticCache
 from f1_agent.example_store import build_dynamic_examples_addendum
+from f1_agent.memory_bank import (
+    build_memory_addendum,
+    generate_memories_from_session,
+)
+from f1_agent.memory_bank import (
+    load_settings as load_memory_bank_settings,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -447,6 +458,7 @@ def store_cache(callback_context, llm_response):
 
 _CORRECTIONS_KEY = "f1_corrections"
 _MAX_CORRECTIONS = 20
+_MEMORY_GENERATE_FLAG_KEY = "f1_generate_memory"
 
 # Patterns that indicate the user is correcting the agent
 _CORRECTION_PATTERNS: list[re.Pattern] = [
@@ -500,6 +512,69 @@ def _store_correction(callback_context, correction: str) -> None:
     state[_CORRECTIONS_KEY] = corrections
 
 
+def _extract_user_id(callback_context) -> str | None:
+    user_id = getattr(callback_context, "user_id", None)
+    if isinstance(user_id, str) and user_id.strip():
+        return user_id.strip()
+
+    invocation_context = getattr(callback_context, "invocation_context", None)
+    nested_user_id = getattr(invocation_context, "user_id", None)
+    if isinstance(nested_user_id, str) and nested_user_id.strip():
+        return nested_user_id.strip()
+
+    state = getattr(callback_context, "state", None)
+    if isinstance(state, dict):
+        fallback = state.get("user_id")
+        if isinstance(fallback, str) and fallback.strip():
+            return fallback.strip()
+
+    return None
+
+
+def _extract_session_name(callback_context) -> str | None:
+    session_name = getattr(callback_context, "session_name", None)
+    if isinstance(session_name, str) and "/sessions/" in session_name:
+        return session_name
+
+    session = getattr(callback_context, "session", None)
+    session_from_obj = getattr(session, "name", None)
+    if isinstance(session_from_obj, str) and "/sessions/" in session_from_obj:
+        return session_from_obj
+
+    session_id = getattr(callback_context, "session_id", None)
+    if not isinstance(session_id, str) or not session_id.strip():
+        return None
+
+    settings = load_memory_bank_settings()
+    if (
+        not settings.project_id
+        or not settings.location
+        or not settings.agent_engine_name
+    ):
+        return None
+
+    if "/sessions/" in session_id:
+        return session_id
+
+    return f"{settings.agent_engine_name}/sessions/{session_id.strip()}"
+
+
+def _mark_memory_generation(callback_context) -> None:
+    state = getattr(callback_context, "state", None)
+    if isinstance(state, dict):
+        state[_MEMORY_GENERATE_FLAG_KEY] = True
+
+
+def _consume_memory_generation_flag(callback_context) -> bool:
+    state = getattr(callback_context, "state", None)
+    if not isinstance(state, dict):
+        return False
+
+    flagged = bool(state.get(_MEMORY_GENERATE_FLAG_KEY, False))
+    state.pop(_MEMORY_GENERATE_FLAG_KEY, None)
+    return flagged
+
+
 def inject_corrections(callback_context, llm_request):
     """Before-model callback: inject stored corrections into the prompt.
 
@@ -545,6 +620,27 @@ def inject_dynamic_examples(callback_context, llm_request):
     return None
 
 
+def inject_long_term_memories(callback_context, llm_request):
+    """Before-model callback: inject relevant cross-session memories."""
+    user_id = _extract_user_id(callback_context)
+    if not user_id:
+        return None
+
+    user_text = _extract_user_text(callback_context, llm_request)
+    addendum, metadata = build_memory_addendum(user_id=user_id, query_text=user_text)
+    if not addendum:
+        logger.debug(
+            "Memory injection skipped (enabled=%s configured=%s)",
+            metadata.get("enabled"),
+            metadata.get("configured"),
+        )
+        return None
+
+    llm_request.append_instructions([addendum])
+    logger.info("Injected long-term memories: count=%s", metadata.get("memory_count"))
+    return None
+
+
 def inject_runtime_temporal_context(callback_context, llm_request):
     """Before-model callback: inject dynamic date/year guidance every request."""
     addenda = [_runtime_temporal_addendum()]
@@ -580,6 +676,37 @@ def detect_corrections(callback_context, llm_response):
         correction = correction[:500] + "…"
 
     _store_correction(callback_context, correction)
+    _mark_memory_generation(callback_context)
     logger.info("Correction stored: %s", correction[:80])
 
     return None  # don't modify the response
+
+
+def sync_memory_bank(callback_context, llm_response):
+    """After-model callback: trigger long-term memory generation from session."""
+    del llm_response  # unused
+
+    settings = load_memory_bank_settings()
+    if not settings.enabled:
+        return None
+
+    should_generate = _consume_memory_generation_flag(callback_context)
+
+    if not should_generate and settings.generate_on_correction_only:
+        return None
+
+    session_name = _extract_session_name(callback_context)
+    if not session_name:
+        logger.debug("Memory generation skipped: missing session name")
+        return None
+
+    user_id = _extract_user_id(callback_context)
+    generated = generate_memories_from_session(
+        session_name=session_name,
+        user_id=user_id,
+        wait_for_completion=False,
+    )
+    if generated:
+        logger.info("Triggered memory generation for session: %s", session_name)
+
+    return None

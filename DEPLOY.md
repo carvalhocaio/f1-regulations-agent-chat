@@ -265,6 +265,11 @@ uv run python deployment/deploy.py \
   --rag-backend auto \
   --rag-corpus "projects/<PROJECT_NUMBER>/locations/europe-west4/ragCorpora/<RAG_CORPUS_ID>" \
   --rag-location "europe-west4" \
+  --memory-bank-enabled \
+  --memory-bank-agent-engine-name "projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>" \
+  --memory-bank-max-facts 5 \
+  --memory-bank-fetch-limit 20 \
+  --memory-bank-generate-on-correction-only \
   --example-store-enabled \
   --example-store-name "projects/<PROJECT_NUMBER>/locations/us-central1/exampleStores/<EXAMPLE_STORE_ID>" \
   --example-store-top-k 3 \
@@ -310,6 +315,8 @@ Configure under **Settings > Secrets and variables > Actions**:
 | `GCP_SA_EMAIL` | `f1-agent-engine@f1-regulations-agent-chat.iam.gserviceaccount.com` |
 | `GCP_RAG_CORPUS` | `projects/<PROJECT_NUMBER>/locations/europe-west4/ragCorpora/<RAG_CORPUS_ID>` (optional) |
 | `GCP_RAG_REGION` | `europe-west4` (optional; defaults to `GCP_REGION`) |
+| `GCP_MEMORY_BANK_ENABLED` | `true` or `false` (optional; enables A3 rollout in deploy workflow) |
+| `GCP_MEMORY_BANK_AGENT_ENGINE_NAME` | `projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>` (optional, recommended when enabling A3) |
 | `GCP_CODE_EXECUTION_ENABLED` | `true` or `false` (optional; enables A6 rollout in deploy workflow) |
 | `GCP_CODE_EXECUTION_AGENT_ENGINE_NAME` | `projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>` (optional, recommended when enabling A6) |
 
@@ -390,6 +397,7 @@ print("Deleted:", os.environ["RESOURCE_NAME"])
 - **RAG backend**: `F1_RAG_BACKEND=auto` is the recommended default. It prefers Vertex RAG when configured (`F1_RAG_CORPUS`) and falls back to local FAISS+BM25 for resilience.
 - **RAG location**: `F1_RAG_LOCATION` can be different from Agent Engine region; use `europe-west4` (or `europe-west3`) when `us-central1` is allowlist-restricted.
 - **Example Store**: only enable dynamic few-shot when `F1_EXAMPLE_STORE_NAME` points to a valid store. Recommended region for Example Store is `us-central1`.
+- **Memory Bank**: enable only after Sessions are stable and `user_id` contract is enforced. Start with `F1_MEMORY_BANK_GENERATE_ON_CORRECTION_ONLY=true` to reduce noisy memories.
 - **Code Execution (A6)**: keep disabled by default and enable only with a clear safety policy. Current implementation is restricted to allowlisted analytical templates and `us-central1`.
 - **Fine-tuned model**: The `f1-tuned-model` secret is optional. If not set, simple queries fall back to `gemini-2.5-flash`. See [DEVELOPMENT.md](./DEVELOPMENT.md#fine-tuning-production-only) for details.
 - **Scaling**: Adjust `min_instances` and `max_instances` according to demand.

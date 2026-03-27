@@ -11,9 +11,11 @@ from f1_agent.callbacks import (
     detect_corrections,
     inject_corrections,
     inject_dynamic_examples,
+    inject_long_term_memories,
     inject_runtime_temporal_context,
     route_model,
     store_cache,
+    sync_memory_bank,
 )
 from f1_agent.code_execution import run_analytical_code
 from f1_agent.tools import (
@@ -118,9 +120,10 @@ root_agent = Agent(
         check_cache,
         inject_runtime_temporal_context,
         inject_corrections,
+        inject_long_term_memories,
         inject_dynamic_examples,
         route_model,
     ],
-    after_model_callback=[detect_corrections, store_cache],
+    after_model_callback=[detect_corrections, sync_memory_bank, store_cache],
     on_model_error_callback=handle_rate_limit,
 )

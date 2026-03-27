@@ -24,6 +24,7 @@ Built with [Google ADK](https://google.github.io/adk-docs/) and powered by Gemin
 - **Semantic cache** — near-instant responses for repeated/similar questions (cosine similarity > 0.92)
 - **Session corrections** — detects when users correct the agent (PT/EN) and avoids repeating mistakes
 - **Managed sessions (A2)** — supports Vertex AI Sessions (`user_id` + `session_id`) with TTL for persistent context
+- **Memory Bank (A3)** — optional long-term memory retrieval/generation per user across sessions
 - **Dynamic few-shot via Example Store (A5)** — retrieves similar examples of real errors at runtime (feature-flagged)
 - **Code Execution sandbox (A6, restricted mode)** — allowlisted analytical templates for simulations/statistics (feature-flagged)
 - **RAG Engine rollout (A4)** — `search_regulations` supports phased routing (`auto|local|vertex`) with automatic fallback to local hybrid RAG
@@ -41,6 +42,8 @@ User question
 [inject_runtime_temporal_context] --> Inject current UTC date/year (per request)
     |
 [inject_corrections] --> Append session corrections to prompt
+    |
+[inject_long_term_memories] --> Inject relevant cross-session memories
     |
 [inject_dynamic_examples] --> Retrieve similar corrected errors from Example Store
     |
@@ -66,6 +69,8 @@ ADK Agent (Gemini)
     |
     v
 [detect_corrections] --> Store if user corrected the agent
+    |
+[sync_memory_bank] ---> Generate long-term memory from managed session
     |
 [store_cache] --------> Cache the answer for future reuse
                          (time-sensitive/web queries are not reused via cache)
@@ -137,6 +142,15 @@ GOOGLE_API_KEY=your-key-here
 # F1_EXAMPLE_STORE_TOP_K=3
 # F1_EXAMPLE_STORE_MIN_SCORE=0.65
 
+# Optional (A3 Memory Bank). Keep disabled by default.
+# F1_MEMORY_BANK_ENABLED=false
+# F1_MEMORY_BANK_PROJECT_ID=<PROJECT_ID>
+# F1_MEMORY_BANK_LOCATION=us-central1
+# F1_MEMORY_BANK_AGENT_ENGINE_NAME=projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>
+# F1_MEMORY_BANK_MAX_FACTS=5
+# F1_MEMORY_BANK_FETCH_LIMIT=20
+# F1_MEMORY_BANK_GENERATE_ON_CORRECTION_ONLY=true
+
 # Optional (A6 restricted Code Execution). Keep disabled by default.
 # F1_CODE_EXECUTION_ENABLED=false
 # F1_CODE_EXECUTION_LOCATION=us-central1
@@ -192,6 +206,7 @@ f1-regulations-agent-chat/
 │   ├── callbacks.py            # Model routing, semantic cache, session corrections
 │   ├── runner.py               # ADK runner wiring for managed/local sessions
 │   ├── sessions.py             # user_id/session_id normalization helpers
+│   ├── memory_bank.py          # Long-term memory retrieval/generation (A3)
 │   ├── cache.py                # SemanticCache (FAISS + SQLite, TTL-based)
 │   ├── code_execution.py       # Restricted analytical sandbox adapter (A6)
 │   ├── tools.py                # Agent tools (regulations, history, search)
