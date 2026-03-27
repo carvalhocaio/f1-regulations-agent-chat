@@ -18,6 +18,7 @@ env:
   AGENT_MIN_INSTANCES: ${{ secrets.GCP_AGENT_MIN_INSTANCES }}
   AGENT_MAX_INSTANCES: ${{ secrets.GCP_AGENT_MAX_INSTANCES }}
   AGENT_CONTAINER_CONCURRENCY: ${{ secrets.GCP_AGENT_CONTAINER_CONCURRENCY }}
+  VERTEX_LLM_REQUEST_TYPE: ${{ secrets.GCP_VERTEX_LLM_REQUEST_TYPE }}
   PREFLIGHT_TOKEN_CHECK_ENABLED: ${{ secrets.GCP_PREFLIGHT_TOKEN_CHECK_ENABLED }}
   PREFLIGHT_TOKEN_THRESHOLD: ${{ secrets.GCP_PREFLIGHT_TOKEN_THRESHOLD }}
   PREFLIGHT_TOKEN_HARD_LIMIT: ${{ secrets.GCP_PREFLIGHT_TOKEN_HARD_LIMIT }}
@@ -80,6 +81,7 @@ jobs:
           AGENT_MIN_INSTANCES="${AGENT_MIN_INSTANCES:-2}"
           AGENT_MAX_INSTANCES="${AGENT_MAX_INSTANCES:-6}"
           AGENT_CONTAINER_CONCURRENCY="${AGENT_CONTAINER_CONCURRENCY:-18}"
+          VERTEX_LLM_REQUEST_TYPE="${VERTEX_LLM_REQUEST_TYPE:-shared}"
 
           MEMORY_BANK_ARGS=()
           if [ "${MEMORY_BANK_ENABLED}" = "true" ]; then
@@ -135,6 +137,7 @@ jobs:
             --min-instances "$AGENT_MIN_INSTANCES" \
             --max-instances "$AGENT_MAX_INSTANCES" \
             --container-concurrency "$AGENT_CONTAINER_CONCURRENCY" \
+            --vertex-llm-request-type "$VERTEX_LLM_REQUEST_TYPE" \
             --rag-backend "auto" \
             --rag-corpus "$RAG_CORPUS" \
             --rag-location "${RAG_REGION:-$REGION}" \

@@ -93,6 +93,7 @@ Opens the ADK web UI at `http://localhost:8000`.
 | `F1_CODE_EXECUTION_AGENT_ENGINE_NAME` | No | — | Agent Engine resource used as parent for sandbox operations |
 | `F1_CODE_EXECUTION_SANDBOX_TTL_SECONDS` | No | `3600` | TTL for sandbox lifecycle in seconds |
 | `F1_CODE_EXECUTION_MAX_ROWS` | No | `500` | Max list size accepted by analytical payload validators |
+| `F1_VERTEX_LLM_REQUEST_TYPE` | No | `shared` | Vertex Gemini throughput route: `shared` (DSQ) or `dedicated` (Provisioned Throughput) |
 | `F1_SEMANTIC_CACHE_SIMILARITY_THRESHOLD` | No | `0.92` | Minimum cosine similarity (via normalized inner product) for cache hit |
 | `F1_SEMANTIC_CACHE_TOP_K` | No | `8` | ANN candidate count per cache lookup |
 | `F1_SEMANTIC_CACHE_HNSW_M` | No | `32` | HNSW graph degree parameter |
@@ -125,6 +126,7 @@ Before model:
   4. inject_long_term_memories — Inject relevant cross-session memories (A3)
   5. inject_dynamic_examples — Retrieve real-error few-shots from Example Store
   6. route_model      — Route to Flash/tuned (simple) or Pro (complex)
+  7. apply_throughput_request_type — Set `X-Vertex-AI-LLM-Request-Type` (`shared|dedicated`)
 
 After model:
   7. detect_corrections — Detect if the user corrected the agent (PT/EN)

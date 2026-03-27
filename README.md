@@ -159,6 +159,9 @@ GOOGLE_API_KEY=your-key-here
 # F1_CODE_EXECUTION_SANDBOX_TTL_SECONDS=3600
 # F1_CODE_EXECUTION_MAX_ROWS=500
 
+# Optional (P6 throughput routing). Default is DSQ/pay-as-you-go.
+# F1_VERTEX_LLM_REQUEST_TYPE=shared  # shared|dedicated
+
 # Optional (P2 resilience defaults tuned for chat fail-fast).
 # F1_LLM_RETRY_ENABLED=true
 # F1_LLM_RETRY_ATTEMPTS=3

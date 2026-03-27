@@ -19,6 +19,7 @@ from f1_agent.callbacks import (
     inject_runtime_temporal_context,
     log_context_cache_metrics,
     preflight_token_check,
+    apply_throughput_request_type,
     route_model,
     store_cache,
     sync_memory_bank,
@@ -180,6 +181,7 @@ root_agent = Agent(
         inject_long_term_memories,
         inject_dynamic_examples,
         route_model,
+        apply_throughput_request_type,
         preflight_token_check,
     ],
     after_model_callback=[

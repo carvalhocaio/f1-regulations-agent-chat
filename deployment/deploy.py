@@ -352,6 +352,15 @@ def main():
         default=500,
         help="Max row-like items accepted by analytical payload validators",
     )
+    parser.add_argument(
+        "--vertex-llm-request-type",
+        default="shared",
+        choices=["shared", "dedicated"],
+        help=(
+            "Vertex Gemini throughput route: shared (DSQ/pay-as-you-go) "
+            "or dedicated (Provisioned Throughput)"
+        ),
+    )
     # ── Token Preflight (CountTokens pre-call check) ──
     parser.add_argument(
         "--preflight-token-check-enabled",
@@ -454,6 +463,7 @@ def main():
             max(300, args.code_execution_sandbox_ttl_seconds)
         ),
         "F1_CODE_EXECUTION_MAX_ROWS": str(max(10, args.code_execution_max_rows)),
+        "F1_VERTEX_LLM_REQUEST_TYPE": args.vertex_llm_request_type,
         # Token Preflight (CountTokens pre-call check)
         "F1_PREFLIGHT_TOKEN_CHECK_ENABLED": "true"
         if args.preflight_token_check_enabled
