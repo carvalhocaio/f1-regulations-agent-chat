@@ -58,7 +58,7 @@ make run
 ```
 
 `make run` now prints runtime guidance and points to the test command,
-because the previous ADK web UI entrypoint was removed.
+because the previous local web UI entrypoint was removed.
 
 ## Environment Variables
 
@@ -127,7 +127,7 @@ Before model:
 
 After model:
   7. detect_corrections — Detect if the user corrected the agent (PT/EN)
-  8. store_cache      — Cache the answer (TTL: 30 days static, 24h web)
+  8. store_cache      — Cache the answer (TTL: 30 days static, 24h time-sensitive)
 
 On error:
   9. handle_rate_limit — User-friendly fallback after retry exhaustion (429/503)
@@ -153,9 +153,9 @@ Classification patterns for complex queries: comparisons (`vs`, `compare`, `dife
 - **Embedding model**: `GEMINI_EMBEDDING_MODEL` (default: `models/gemini-embedding-2-preview`)
 - **Similarity threshold**: 0.92 (cosine)
 - **Storage**: FAISS HNSW ANN (in-memory index) + SQLite (source of truth for answers/metadata)
-- **TTL**: 30 days for historical/regulation data, 24 hours for web-sourced answers
+- **TTL**: 30 days for historical/regulation data, 24 hours for time-sensitive/out-of-coverage prompts
 - **Governance**: periodic sweep of expired rows + max entry cap with low-priority pruning
-- **Freshness guard**: Questions that require live/post-2024 data bypass cache and force fresh tool calls
+- **Freshness guard**: Questions that require live/post-2024 data bypass cache to avoid stale reuse
 - **Location**: `f1_cache/` directory (created at runtime, gitignored)
 
 ### Hybrid RAG (Regulations)
@@ -334,7 +334,7 @@ This format is required because `gemini-2.5-flash` SFT does not support `functio
 ### Steps (for maintainers)
 
 ```bash
-# 1. Generate the dataset (56 bilingual Q&A pairs from the real database)
+# 1. Generate the dataset (bilingual Q&A pairs from the real database)
 uv run python -m f1_agent.fine_tuning.generate_dataset
 
 # 2. Upload training and test splits to GCS
@@ -400,7 +400,7 @@ Redaction is enabled by default in the builder and should remain enabled for reg
 | File | Purpose |
 |------|---------|
 | `f1_agent/fine_tuning/schema.py` | TOOL_DECLARATIONS, `build_example()`, JSONL format helpers |
-| `f1_agent/fine_tuning/generate_dataset.py` | 8 generators producing 56 Q&A pairs from real database |
+| `f1_agent/fine_tuning/generate_dataset.py` | Dataset generators producing bilingual Q&A pairs from real database |
 | `f1_agent/fine_tuning/tune.py` | CLI to launch Vertex AI SFT job (`vertexai.tuning.sft.train`) |
 
 ## Troubleshooting
@@ -436,7 +436,7 @@ For local development, keep `F1_TUNED_MODEL` unset so routing falls back to
 | `f1_agent/sessions.py` | Session identity normalization (`user_id`, `session_id`, `client_id`) and TTL helpers |
 | `f1_agent/callbacks.py` | Before/after-model callbacks: routing, cache, corrections |
 | `f1_agent/cache.py` | Semantic answer cache (FAISS + SQLite with TTL) |
-| `f1_agent/tools.py` | Tool functions: `search_regulations`, `query_f1_history_template`, `query_f1_history` |
+| `f1_agent/tools.py` | Tool functions: `search_regulations`, `query_f1_history_template`, `query_f1_history`, `run_analytical_code` |
 | `f1_agent/rag.py` | RAG pipeline: PDF loading, article-aware chunking, FAISS + BM25 hybrid search |
 | `f1_agent/rag_vertex.py` | Vertex RAG adapter (`auto|local|vertex`) |
 | `f1_agent/db.py` | SQLite DB: schema builder (from Kaggle CSVs), read-only query execution |

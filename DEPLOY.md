@@ -11,7 +11,7 @@ GitHub Actions (CI/CD)
 
 GCP (f1-regulations-agent-chat)
   ├── Vertex AI Agent Engine  ← Python agent runtime (f1_agent)
-  ├── Secret Manager          ← GEMINI_API_KEY
+  ├── Secret Manager          ← `google-api-key` (injected as `GEMINI_API_KEY`)
   ├── Cloud Storage           ← staging bucket + artifacts
   └── IAM                     ← dedicated service account
 ```
@@ -337,7 +337,7 @@ uv run python deployment/load_test_agent_engine.py \
 Suggested quick loop:
 1. Run once with current config (baseline).
 2. Increase `--min-instances` to reduce cold starts.
-3. Adjust `--container-concurrency` (multiples of 9) to absorb bursts.
+3. Adjust `--container-concurrency` to absorb bursts.
 4. Keep `--max-instances` bounded for cost control.
 
 ### 6.2.1) Streaming mode benchmark (P7)

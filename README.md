@@ -28,7 +28,7 @@ Built with Gemini + Vertex AI SDK and powered by local runtime wiring.
 - **Strict tool contract** — no compatibility alias, stricter argument validation, and structured tool errors for invalid calls
 - **Tool validation telemetry** — per-tool/per-error counters in runtime logs (e.g. `tool_validation_error`)
 - **Runtime temporal context** — injects current UTC date/year on every request to avoid stale year assumptions after deploy
-- **Temporal reasoning** — automatically splits questions: `1950-2024` via SQLite, `2025+` via web search
+- **Temporal reasoning** — resolves relative dates and enforces local DB coverage limits (`1950-2024`)
 
 ## How It Works
 
@@ -65,7 +65,7 @@ Agent Runtime (Gemini)
 [detect_corrections] --> Store if user corrected the agent
     |
 [store_cache] --------> Cache the answer for future reuse
-                         (time-sensitive/web queries are not reused via cache)
+                         (time-sensitive/out-of-coverage queries are not reused via cache)
     |
     v
 Unified answer + sources
@@ -196,9 +196,11 @@ EOF
 # 5. Build artifacts
 uv run build_index.py
 
-# 6. Run locally
+# 6. Validate locally
 make run
 ```
+
+`make run` prints runtime guidance and the recommended validation command.
 
 For detailed setup instructions, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 
@@ -217,6 +219,8 @@ For detailed setup instructions, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 **Cross-source:**
 - "Compare Schumacher's 2004 dominance with 2026 regulation changes."
 - "Show the last 10 drivers' champions."
+
+> Note: the local historical database covers seasons up to 2024.
 
 ## SQL Tool Constraints
 
@@ -239,7 +243,7 @@ f1-regulations-agent-chat/
 │   ├── websocket_bridge.py      # Framework-agnostic WebSocket <-> bidi bridge loop
 │   ├── cache.py                # SemanticCache (FAISS + SQLite, TTL-based)
 │   ├── code_execution.py       # Restricted analytical sandbox adapter (A6)
-│   ├── tools.py                # Agent tools (regulations, history, search)
+│   ├── tools.py                # Agent tools (regulations, history, analytics)
 │   ├── rag.py                  # PDF loading, chunking, FAISS + BM25 hybrid search
 │   ├── rag_vertex.py           # Vertex RAG adapter (A4 phased externalization)
 │   ├── rag_vector_search.py    # Vertex Vector Search adapter (P8 candidate backend)
