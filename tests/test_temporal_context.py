@@ -143,9 +143,9 @@ class TemporalResolutionTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIn("2023", result)
         self.assertIn("2025", result)
-        # Should suggest both DB and out-of-coverage years
+        # Should suggest both DB and google_search for out-of-coverage years
         self.assertIn("DB", result)
-        self.assertIn("outside", result.lower())
+        self.assertIn("google_search", result)
 
     @patch("f1_agent.callbacks._current_year", return_value=2026)
     def test_resolves_current_champion(self, _mock):
@@ -177,8 +177,8 @@ class TemporalResolutionTests(unittest.TestCase):
     def test_preseason_guard_for_current_standings(self, _mock_year, _mock_date):
         result = _resolve_temporal_references("Quem é o líder do campeonato?")
         self.assertIsNotNone(result)
-        self.assertIn("Pre-season guard", result)
-        self.assertIn("season has not started", result)
+        self.assertIn("get_current_season_info", result)
+        self.assertIn("google_search", result)
 
     def test_returns_none_for_no_relative_terms(self):
         result = _resolve_temporal_references("Quem venceu o GP de 2023?")

@@ -8,12 +8,16 @@ TOOL_NAME_SEARCH_REGULATIONS = "search_regulations"
 TOOL_NAME_QUERY_F1_HISTORY_TEMPLATE = "query_f1_history_template"
 TOOL_NAME_QUERY_F1_HISTORY = "query_f1_history"
 TOOL_NAME_RUN_ANALYTICAL_CODE = "run_analytical_code"
+TOOL_NAME_GET_CURRENT_SEASON_INFO = "get_current_season_info"
+TOOL_NAME_GOOGLE_SEARCH = "google_search"
 
 ALLOWED_TOOL_NAMES = [
     TOOL_NAME_SEARCH_REGULATIONS,
     TOOL_NAME_QUERY_F1_HISTORY_TEMPLATE,
     TOOL_NAME_QUERY_F1_HISTORY,
     TOOL_NAME_RUN_ANALYTICAL_CODE,
+    TOOL_NAME_GET_CURRENT_SEASON_INFO,
+    TOOL_NAME_GOOGLE_SEARCH,
 ]
 
 
@@ -105,4 +109,19 @@ def build_tool_declarations() -> list[dict[str, Any]]:
                 "additionalProperties": False,
             },
         },
+        {
+            "name": TOOL_NAME_GET_CURRENT_SEASON_INFO,
+            "description": (
+                "Get the current F1 season calendar and identify which races "
+                "have already happened. No parameters required."
+            ),
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+        },
+        # Note: google_search is a Gemini built-in tool, not a function tool.
+        # It does not need a declaration here.
     ]

@@ -232,13 +232,15 @@ def _runtime_temporal_addendum() -> str:
         " are FINISHED, HISTORICAL seasons.\n"
         "- Historical DB coverage: 1950-2024 only.\n"
         f"- For data from 2025 through {last_completed}:"
-        " outside local database coverage.\n"
+        " use google_search to retrieve results.\n"
         f"- For data from {current_year} (ongoing season):"
-        " outside local database coverage.\n"
+        " use google_search and get_current_season_info.\n"
         "- CRITICAL: Your training data may be outdated. If your training"
         f" data says '{last_completed} season hasn't concluded' or similar,"
         f" THAT IS WRONG. Trust THIS instruction: the {last_completed}"
         " season is over. Do NOT contradict this with stale assumptions.\n"
+        f"- If unsure about {last_completed} results: USE google_search to"
+        " verify. Do NOT say the season hasn't happened.\n"
         "- Do not describe completed seasons as future or ongoing events."
     )
 
@@ -302,8 +304,8 @@ def _resolve_temporal_references(user_text: str) -> str | None:
         )
         if last_completed > _DB_MAX_YEAR:
             tool_hints.append(
-                f"- Year {last_completed} is NOT in the local database; explicitly "
-                "state this limitation"
+                f"- Year {last_completed} is NOT in the local database;"
+                " use google_search to retrieve results"
             )
         else:
             tool_hints.append(
@@ -311,26 +313,46 @@ def _resolve_temporal_references(user_text: str) -> str | None:
                 " → use query_f1_history_template or query_f1_history"
             )
 
-    # "últimas N temporadas" / "last N seasons"
+    # "últimas N temporadas" / "last N seasons/winners/champions"
     m = _LAST_N_SEASONS_RE.search(user_text)
     if m:
         n = int(m.group(2))
+        matched_term = m.group(3).lower()
         from_year = current_year - n
         to_year = last_completed
+        # Event-specific terms (winners, podiums) may include current year
+        _event_terms = (
+            "vencedor", "winner", "podium", "pódio",
+            "campe", "champion",
+        )
+        is_event_query = any(t in matched_term for t in _event_terms)
         resolutions.append(
             f"- 'Last {n}' = seasons {from_year} through {to_year} (all completed)"
         )
+        if is_event_query:
+            resolutions.append(
+                f"- The {current_year} edition of this event MAY have already"
+                " happened. Use get_current_season_info to check, and if so,"
+                " include it in the answer."
+            )
         db_years = [y for y in range(from_year, to_year + 1) if y <= _DB_MAX_YEAR]
         web_years = [y for y in range(from_year, to_year + 1) if y > _DB_MAX_YEAR]
         if db_years and web_years:
             tool_hints.append(
                 f"- DB (query_f1_history_template): {db_years[0]}-{db_years[-1]}"
             )
-            tool_hints.append(f"- Outside DB coverage: {web_years[0]}-{web_years[-1]}")
-            tool_hints.append("- Combine BOTH into a single unified answer")
+            tool_hints.append(
+                f"- Years {web_years[0]}-{web_years[-1]}: use google_search"
+                " to retrieve these results"
+            )
+            tool_hints.append(
+                "- REQUIRED: call google_search for out-of-DB years,"
+                " then combine with DB results into a single unified answer"
+            )
         elif web_years:
             tool_hints.append(
-                f"- All years ({web_years[0]}-{web_years[-1]}) are outside DB coverage"
+                f"- All years ({web_years[0]}-{web_years[-1]}): use google_search"
+                " to retrieve results"
             )
         elif db_years:
             tool_hints.append(
@@ -345,13 +367,17 @@ def _resolve_temporal_references(user_text: str) -> str | None:
         )
         if last_completed > _DB_MAX_YEAR:
             tool_hints.append(
-                f"- {last_completed} champion is outside DB coverage; state limitation"
+                f"- {last_completed} champion is outside DB coverage;"
+                " use google_search to find the answer"
             )
 
     # "esta temporada" / "this season"
     if _THIS_SEASON_RE.search(user_text):
         resolutions.append(f"- 'This/current season' = {current_year} (may be ongoing)")
-        tool_hints.append(f"- {current_year} season is outside DB coverage")
+        tool_hints.append(
+            f"- {current_year} season is outside DB coverage;"
+            " use google_search and get_current_season_info"
+        )
 
     if _LAST_EVENT_RE.search(user_text) and not _YEAR_RE.search(user_text):
         resolutions.append(
@@ -361,6 +387,10 @@ def _resolve_temporal_references(user_text: str) -> str | None:
         resolutions.append(
             f"- In {current_year}, that usually means {last_completed} or {current_year}"
             " depending on event date"
+        )
+        tool_hints.append(
+            "- Use get_current_season_info to check if the event happened in"
+            f" {current_year}, then use google_search for the result"
         )
         tool_hints.append("- Return event DATE and YEAR to prove recency")
         tool_hints.append(
@@ -372,7 +402,8 @@ def _resolve_temporal_references(user_text: str) -> str | None:
             f"- Missing year + 'next event' wording = next scheduled event in {current_year}"
         )
         tool_hints.append(
-            "- Return the event date from verified sources when available"
+            "- Use get_current_season_info to find the next scheduled race,"
+            " then google_search for details"
         )
 
     if _CURRENT_STANDINGS_RE.search(user_text):
@@ -380,13 +411,8 @@ def _resolve_temporal_references(user_text: str) -> str | None:
             f"- Standings/leader request without explicit year defaults to {current_year}"
         )
         tool_hints.append(
-            "- Verify whether at least one race in the current season has happened"
-        )
-        if current_date.month <= 2:
-            tool_hints.append(
-                f"- Pre-season guard ({current_date.isoformat()}): if no race has happened"
-                f" yet in {current_year}, answer that the {current_year} season has not"
-                " started and offer last season results"
+            "- Use get_current_season_info to check if the season has started,"
+            " then google_search for current standings"
             )
 
     if not resolutions:

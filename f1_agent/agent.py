@@ -7,6 +7,7 @@ from f1_agent.adk_compat import (
     Agent,
     App,
     Gemini,
+    GoogleSearchTool,
     LlmResponse,
 )
 from f1_agent.callbacks import (
@@ -29,6 +30,7 @@ from f1_agent.code_execution import run_analytical_code
 from f1_agent.env_utils import env_bool, env_float, env_int
 from f1_agent.resilience import is_quota_or_unavailable_error
 from f1_agent.tools import (
+    get_current_season_info,
     query_f1_history,
     query_f1_history_template,
     search_regulations,
@@ -143,6 +145,8 @@ root_agent = Agent(
         query_f1_history_template,
         query_f1_history,
         run_analytical_code,
+        get_current_season_info,
+        GoogleSearchTool(bypass_multi_tools_limit=True),
     ],
     before_model_callback=[
         check_cache,

@@ -2,7 +2,11 @@ import json
 import logging
 import os
 import re
+import threading
+import time
+import urllib.request
 from collections import Counter
+from datetime import date, datetime, timezone
 from typing import Any
 
 from f1_agent import db
@@ -413,6 +417,107 @@ def query_f1_history(sql_query: str) -> dict:
         "results": results,
         "row_count": len(results),
         "truncated": truncated,
+    }
+
+
+# ── Season info tool (Jolpica/Ergast API) ─────────────────────────────
+
+_JOLPICA_URL = "https://api.jolpi.ca/ergast/f1/current.json"
+_SEASON_CACHE_TTL_S = 3600  # 1 hour
+_SEASON_CACHE_TIMEOUT_S = 3
+
+_season_cache_lock = threading.Lock()
+_season_cache: dict[str, Any] = {"data": None, "fetched_at": 0.0}
+
+
+def _fetch_season_calendar() -> list[dict[str, Any]]:
+    """Fetch current season calendar from Jolpica API with caching."""
+    with _season_cache_lock:
+        now = time.monotonic()
+        if (
+            _season_cache["data"] is not None
+            and now - _season_cache["fetched_at"] < _SEASON_CACHE_TTL_S
+        ):
+            return _season_cache["data"]
+
+    try:
+        req = urllib.request.Request(
+            _JOLPICA_URL,
+            headers={"User-Agent": "f1-agent/1.0", "Accept": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=_SEASON_CACHE_TIMEOUT_S) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        races = payload["MRData"]["RaceTable"]["Races"]
+    except Exception as exc:
+        logger.warning("Jolpica API unavailable: %s", exc)
+        with _season_cache_lock:
+            if _season_cache["data"] is not None:
+                return _season_cache["data"]
+        return []
+
+    with _season_cache_lock:
+        _season_cache["data"] = races
+        _season_cache["fetched_at"] = time.monotonic()
+    return races
+
+
+def get_current_season_info() -> dict[str, Any]:
+    """Get the current F1 season calendar and identify which races have already happened.
+
+    Returns the current season year, total number of races, and a breakdown
+    of completed and upcoming races with their dates and circuit names.
+    Use this tool to determine if the current F1 season has started and
+    whether a specific Grand Prix has already taken place this year.
+    """
+    today = datetime.now(timezone.utc).date()
+    races = _fetch_season_calendar()
+
+    if not races:
+        return {
+            "status": "unavailable",
+            "message": (
+                "Could not fetch season calendar. Use google_search as fallback."
+            ),
+        }
+
+    season = races[0].get("season", str(today.year))
+    completed = []
+    upcoming = []
+
+    for race in races:
+        race_date_str = race.get("date", "")
+        try:
+            race_date = date.fromisoformat(race_date_str)
+        except ValueError:
+            continue
+
+        entry = {
+            "round": race.get("round"),
+            "name": race.get("raceName"),
+            "date": race_date_str,
+            "circuit": race.get("Circuit", {}).get("circuitName"),
+            "country": race.get("Circuit", {}).get("Location", {}).get("country"),
+        }
+
+        if race_date <= today:
+            completed.append(entry)
+        else:
+            upcoming.append(entry)
+
+    season_started = len(completed) > 0
+    next_race = upcoming[0] if upcoming else None
+
+    return {
+        "status": "success",
+        "season": season,
+        "today": today.isoformat(),
+        "season_started": season_started,
+        "total_races": len(races),
+        "completed_count": len(completed),
+        "upcoming_count": len(upcoming),
+        "completed_races": completed,
+        "next_race": next_race,
+        "upcoming_races": upcoming[:3],
     }
 
 

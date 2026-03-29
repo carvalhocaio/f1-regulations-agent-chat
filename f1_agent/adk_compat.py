@@ -28,6 +28,9 @@ try:  # pragma: no cover - exercised only in environments with google.adk
         InMemorySessionService as InMemorySessionService,
     )
     from google.adk.sessions import Session as Session
+    from google.adk.tools.google_search_tool import (
+        GoogleSearchTool as GoogleSearchTool,
+    )
 
     _USING_REAL_ADK = True
 except Exception:  # pragma: no cover - normal path in CI without ADK
@@ -107,6 +110,13 @@ except Exception:  # pragma: no cover - normal path in CI without ADK
             self, *, app_name: str, user_id: str, session_id: str
         ) -> None:
             self._sessions.pop((app_name, user_id, session_id), None)
+
+    @dataclass
+    class GoogleSearchTool:
+        name: str = "google_search"
+        description: str = "google_search"
+        bypass_multi_tools_limit: bool = False
+        model: str | None = None
 
     @dataclass
     class Runner:

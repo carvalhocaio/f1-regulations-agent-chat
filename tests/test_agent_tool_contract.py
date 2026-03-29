@@ -4,10 +4,10 @@ from f1_agent.agent import root_agent
 
 
 class AgentToolContractTests(unittest.TestCase):
-    def test_instruction_does_not_reference_removed_google_search(self):
+    def test_instruction_references_google_search(self):
         instruction = root_agent.static_instruction
 
-        self.assertNotIn("google_search", instruction)
+        self.assertIn("google_search", instruction)
         self.assertNotIn("google_search_agent", instruction)
 
     def test_instruction_does_not_allow_search_alias(self):
@@ -43,20 +43,21 @@ class AgentToolContractTests(unittest.TestCase):
         self.assertIn("query_f1_history", tool_names)
         self.assertIn("query_f1_history_template", tool_names)
         self.assertIn("run_analytical_code", tool_names)
-        self.assertNotIn("google_search", tool_names)
+        self.assertIn("get_current_season_info", tool_names)
+        self.assertIn("google_search", tool_names)
         self.assertNotIn("search", tool_names)
 
     def test_instruction_enforces_last_event_without_year_policy(self):
         instruction = root_agent.static_instruction
 
-        self.assertIn("outside local database coverage", instruction)
+        self.assertIn("google_search", instruction)
         self.assertIn("Relative expressions", instruction)
 
     def test_instruction_enforces_preseason_leader_guard(self):
         instruction = root_agent.static_instruction
 
         self.assertIn("Current year", instruction)
-        self.assertIn("outside local database coverage", instruction)
+        self.assertIn("get_current_season_info", instruction)
 
     def test_before_model_callback_includes_dynamic_examples(self):
         callback_names = [cb.__name__ for cb in root_agent.before_model_callback]
