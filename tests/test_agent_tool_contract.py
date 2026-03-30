@@ -44,6 +44,7 @@ class AgentToolContractTests(unittest.TestCase):
         self.assertIn("query_f1_history_template", tool_names)
         self.assertIn("run_analytical_code", tool_names)
         self.assertIn("get_current_season_info", tool_names)
+        self.assertIn("search_recent_results", tool_names)
         self.assertIn("google_search", tool_names)
         self.assertNotIn("search", tool_names)
 

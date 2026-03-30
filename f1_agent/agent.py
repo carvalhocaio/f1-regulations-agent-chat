@@ -1,5 +1,10 @@
+import os
+import warnings
 from datetime import datetime
 from pathlib import Path
+
+# Suppress ADK experimental feature warnings
+warnings.filterwarnings("ignore", message=r"\[EXPERIMENTAL\]")
 
 from google.genai import types
 
@@ -33,12 +38,28 @@ from f1_agent.tools import (
     get_current_season_info,
     query_f1_history,
     query_f1_history_template,
+    search_recent_results,
     search_regulations,
 )
 
 CURRENT_YEAR = datetime.now().year
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
+
+
+def _build_tools():
+    """Build the agent's tool list, conditionally including GoogleSearchTool."""
+    tools = [
+        search_regulations,
+        query_f1_history_template,
+        query_f1_history,
+        run_analytical_code,
+        get_current_season_info,
+        search_recent_results,
+    ]
+    if env_bool("F1_GOOGLE_SEARCH_ENABLED", True):
+        tools.append(GoogleSearchTool(bypass_multi_tools_limit=True))
+    return tools
 
 
 def _load_static_instruction() -> str:
@@ -62,6 +83,9 @@ def _load_static_instruction() -> str:
     )
 
 
+_PRO_QUOTA_STATE_KEY = "f1_pro_quota_exhausted_at"
+
+
 def handle_rate_limit(
     callback_context,
     llm_request,
@@ -80,6 +104,30 @@ def handle_rate_limit(
         or "ResourceExhausted" in err_text
         or "resourceexhausted" in err_text.lower()
     ):
+        # Detect Pro-specific quota exhaustion and flag for Flash fallback
+        is_pro_error = "gemini-2.5-pro" in err_text or (
+            hasattr(llm_request, "model")
+            and isinstance(llm_request.model, str)
+            and "pro" in llm_request.model
+        )
+        state = getattr(callback_context, "state", None)
+        if is_pro_error and isinstance(state, dict):
+            state[_PRO_QUOTA_STATE_KEY] = datetime.now().isoformat()
+            return LlmResponse(
+                content=types.Content(
+                    role="model",
+                    parts=[
+                        types.Part(
+                            text=(
+                                "⚡ A cota do modelo Pro foi atingida."
+                                " Alternando para o modelo Flash."
+                                " Por favor, envie sua pergunta novamente!"
+                            )
+                        )
+                    ],
+                )
+            )
+
         return LlmResponse(
             content=types.Content(
                 role="model",
@@ -117,9 +165,12 @@ def handle_rate_limit(
     return None
 
 
+_DEFAULT_MODEL = os.environ.get("F1_DEFAULT_MODEL", "").strip() or "gemini-2.5-pro"
+
+
 def _build_model():
     if not env_bool("F1_LLM_RETRY_ENABLED", True):
-        return "gemini-2.5-pro"
+        return _DEFAULT_MODEL
 
     retry_options = types.HttpRetryOptions(
         initial_delay=max(0.0, env_float("F1_LLM_RETRY_INITIAL_DELAY_S", 1.0)),
@@ -129,7 +180,7 @@ def _build_model():
         jitter=max(0.0, env_float("F1_LLM_RETRY_JITTER", 0.35)),
         http_status_codes=[408, 429, 500, 502, 503, 504],
     )
-    return Gemini(model="gemini-2.5-pro", retry_options=retry_options)
+    return Gemini(model=_DEFAULT_MODEL, retry_options=retry_options)
 
 
 root_agent = Agent(
@@ -140,14 +191,7 @@ root_agent = Agent(
         "regulations and general F1 knowledge."
     ),
     static_instruction=_load_static_instruction(),
-    tools=[
-        search_regulations,
-        query_f1_history_template,
-        query_f1_history,
-        run_analytical_code,
-        get_current_season_info,
-        GoogleSearchTool(bypass_multi_tools_limit=True),
-    ],
+    tools=_build_tools(),
     before_model_callback=[
         check_cache,
         inject_runtime_temporal_context,

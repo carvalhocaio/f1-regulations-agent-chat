@@ -232,7 +232,7 @@ def _runtime_temporal_addendum() -> str:
         " are FINISHED, HISTORICAL seasons.\n"
         "- Historical DB coverage: 1950-2024 only.\n"
         f"- For data from 2025 through {last_completed}:"
-        " use google_search to retrieve results.\n"
+        " use search_recent_results for race data or google_search for general info.\n"
         f"- For data from {current_year} (ongoing season):"
         " use google_search and get_current_season_info.\n"
         "- CRITICAL: Your training data may be outdated. If your training"
@@ -305,7 +305,7 @@ def _resolve_temporal_references(user_text: str) -> str | None:
         if last_completed > _DB_MAX_YEAR:
             tool_hints.append(
                 f"- Year {last_completed} is NOT in the local database;"
-                " use google_search to retrieve results"
+                " use search_recent_results for race data"
             )
         else:
             tool_hints.append(
@@ -342,17 +342,17 @@ def _resolve_temporal_references(user_text: str) -> str | None:
                 f"- DB (query_f1_history_template): {db_years[0]}-{db_years[-1]}"
             )
             tool_hints.append(
-                f"- Years {web_years[0]}-{web_years[-1]}: use google_search"
-                " to retrieve these results"
+                f"- Years {web_years[0]}-{web_years[-1]}: use search_recent_results"
+                " to retrieve official race results"
             )
             tool_hints.append(
-                "- REQUIRED: call google_search for out-of-DB years,"
+                "- REQUIRED: call search_recent_results for out-of-DB years,"
                 " then combine with DB results into a single unified answer"
             )
         elif web_years:
             tool_hints.append(
-                f"- All years ({web_years[0]}-{web_years[-1]}): use google_search"
-                " to retrieve results"
+                f"- All years ({web_years[0]}-{web_years[-1]}): use search_recent_results"
+                " to retrieve official race results"
             )
         elif db_years:
             tool_hints.append(
@@ -368,7 +368,7 @@ def _resolve_temporal_references(user_text: str) -> str | None:
         if last_completed > _DB_MAX_YEAR:
             tool_hints.append(
                 f"- {last_completed} champion is outside DB coverage;"
-                " use google_search to find the answer"
+                " use search_recent_results or google_search to find the answer"
             )
 
     # "esta temporada" / "this season"
@@ -431,10 +431,47 @@ def _resolve_temporal_references(user_text: str) -> str | None:
     return "\n".join(lines)
 
 
+_PRO_QUOTA_STATE_KEY = "f1_pro_quota_exhausted_at"
+_PRO_QUOTA_FALLBACK_HOURS = 6
+
+
+def _is_pro_quota_exhausted(callback_context) -> bool:
+    """Check if Pro quota was recently exhausted (within fallback window)."""
+    state = getattr(callback_context, "state", None)
+    if not isinstance(state, dict):
+        return False
+    exhausted_at = state.get(_PRO_QUOTA_STATE_KEY)
+    if not exhausted_at:
+        return False
+    try:
+        ts = datetime.fromisoformat(exhausted_at)
+        elapsed_hours = (datetime.now(timezone.utc) - ts.replace(
+            tzinfo=timezone.utc if ts.tzinfo is None else ts.tzinfo
+        )).total_seconds() / 3600
+        if elapsed_hours > _PRO_QUOTA_FALLBACK_HOURS:
+            state.pop(_PRO_QUOTA_STATE_KEY, None)
+            return False
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
 def route_model(callback_context, llm_request):
-    """Before-model callback: route simple queries to Flash."""
+    """Before-model callback: route queries to appropriate model.
+
+    Routes to Flash when:
+    - The query is simple (not complex)
+    - Pro quota has been recently exhausted (automatic fallback)
+    """
     user_text = _extract_user_text(callback_context, llm_request)
     if not user_text:
+        return None
+
+    if _is_pro_quota_exhausted(callback_context):
+        logger.info(
+            "Routing to Flash (Pro quota exhausted): %s", user_text[:80]
+        )
+        llm_request.model = FLASH_MODEL
         return None
 
     if _is_complex_question(user_text):

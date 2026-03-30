@@ -97,6 +97,7 @@ class SchemaTests(unittest.TestCase):
         self.assertIn("query_f1_history", names)
         self.assertIn("search_regulations", names)
         self.assertIn("get_current_season_info", names)
+        self.assertIn("search_recent_results", names)
         self.assertNotIn("google_search", names)  # built-in, not a function declaration
         self.assertIn("run_analytical_code", names)
 

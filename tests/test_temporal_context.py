@@ -143,9 +143,9 @@ class TemporalResolutionTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIn("2023", result)
         self.assertIn("2025", result)
-        # Should suggest both DB and google_search for out-of-coverage years
+        # Should suggest both DB and search_recent_results for out-of-coverage years
         self.assertIn("DB", result)
-        self.assertIn("google_search", result)
+        self.assertIn("search_recent_results", result)
 
     @patch("f1_agent.callbacks._current_year", return_value=2026)
     def test_resolves_current_champion(self, _mock):

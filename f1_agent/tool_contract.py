@@ -9,6 +9,7 @@ TOOL_NAME_QUERY_F1_HISTORY_TEMPLATE = "query_f1_history_template"
 TOOL_NAME_QUERY_F1_HISTORY = "query_f1_history"
 TOOL_NAME_RUN_ANALYTICAL_CODE = "run_analytical_code"
 TOOL_NAME_GET_CURRENT_SEASON_INFO = "get_current_season_info"
+TOOL_NAME_SEARCH_RECENT_RESULTS = "search_recent_results"
 TOOL_NAME_GOOGLE_SEARCH = "google_search"
 
 ALLOWED_TOOL_NAMES = [
@@ -17,6 +18,7 @@ ALLOWED_TOOL_NAMES = [
     TOOL_NAME_QUERY_F1_HISTORY,
     TOOL_NAME_RUN_ANALYTICAL_CODE,
     TOOL_NAME_GET_CURRENT_SEASON_INFO,
+    TOOL_NAME_SEARCH_RECENT_RESULTS,
     TOOL_NAME_GOOGLE_SEARCH,
 ]
 
@@ -119,6 +121,32 @@ def build_tool_declarations() -> list[dict[str, Any]]:
                 "type": "OBJECT",
                 "properties": {},
                 "required": [],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": TOOL_NAME_SEARCH_RECENT_RESULTS,
+            "description": (
+                "Search for official F1 race results from the Jolpica API "
+                "(2025 onwards). Returns accurate, structured race "
+                "classifications. Prefer over google_search for results."
+            ),
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "year": {
+                        "type": "INTEGER",
+                        "description": "The season year (2025 or later).",
+                    },
+                    "race_round": {
+                        "type": "INTEGER",
+                        "description": (
+                            "The race round number. If 0 or omitted, "
+                            "returns the latest race with results."
+                        ),
+                    },
+                },
+                "required": ["year"],
                 "additionalProperties": False,
             },
         },

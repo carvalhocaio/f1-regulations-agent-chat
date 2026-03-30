@@ -521,6 +521,130 @@ def get_current_season_info() -> dict[str, Any]:
     }
 
 
+# ── Recent race results tool (Jolpica/Ergast API) ─────────────────────
+
+_JOLPICA_BASE = "https://api.jolpi.ca/ergast/f1"
+_RESULTS_CACHE_TTL_S = 300  # 5 minutes (results may update shortly after race)
+_results_cache_lock = threading.Lock()
+_results_cache: dict[str, tuple[float, Any]] = {}
+
+
+def _fetch_jolpica_json(path: str, cache_ttl: float = _RESULTS_CACHE_TTL_S) -> Any:
+    """Fetch JSON from Jolpica API with per-path caching."""
+    with _results_cache_lock:
+        if path in _results_cache:
+            fetched_at, data = _results_cache[path]
+            if time.monotonic() - fetched_at < cache_ttl:
+                return data
+
+    url = f"{_JOLPICA_BASE}/{path}"
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "f1-agent/1.0", "Accept": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        logger.warning("Jolpica API request failed (%s): %s", url, exc)
+        return None
+
+    with _results_cache_lock:
+        _results_cache[path] = (time.monotonic(), payload)
+    return payload
+
+
+def _parse_race_results(race: dict) -> dict[str, Any]:
+    """Parse a single race result entry from Jolpica/Ergast format."""
+    results = []
+    for r in race.get("Results", []):
+        driver = r.get("Driver", {})
+        constructor = r.get("Constructor", {})
+        entry = {
+            "position": r.get("position"),
+            "driver": f"{driver.get('givenName', '')} {driver.get('familyName', '')}".strip(),
+            "constructor": constructor.get("name", ""),
+            "status": r.get("status", ""),
+            "points": r.get("points", "0"),
+            "time": r.get("Time", {}).get("time", ""),
+        }
+        if r.get("FastestLap"):
+            entry["fastest_lap"] = r["FastestLap"].get("Time", {}).get("time", "")
+        results.append(entry)
+
+    return {
+        "race_name": race.get("raceName", ""),
+        "round": race.get("round", ""),
+        "date": race.get("date", ""),
+        "circuit": race.get("Circuit", {}).get("circuitName", ""),
+        "country": race.get("Circuit", {}).get("Location", {}).get("country", ""),
+        "results": results,
+    }
+
+
+def search_recent_results(year: int, race_round: int = 0) -> dict[str, Any]:
+    """Search for recent F1 race results from the Jolpica API (2025 onwards).
+
+    This tool provides ACCURATE, STRUCTURED race results for seasons not
+    covered by the historical database (2025+). Use it instead of google_search
+    when you need race results, as it returns official classified results.
+
+    IMPORTANT: Prefer this tool over google_search for race results from 2025+.
+    Google search may return inaccurate or outdated snippets, especially for
+    races that happened today. This tool returns the official classification.
+
+    Args:
+        year: The season year (2025 or later).
+        race_round: The race round number. If 0 or omitted, returns the
+                    latest race with results available.
+    """
+    if year < 2025:
+        return _tool_error(
+            tool_name="search_recent_results",
+            code="INVALID_ARGUMENT",
+            message=(
+                f"Year {year} is covered by the historical database. "
+                "Use query_f1_history_template or query_f1_history instead."
+            ),
+        )
+
+    if race_round > 0:
+        path = f"{year}/{race_round}/results.json"
+    else:
+        path = f"{year}/results.json?limit=100"
+
+    payload = _fetch_jolpica_json(path)
+    if payload is None:
+        return {
+            "status": "unavailable",
+            "message": (
+                "Could not fetch race results from Jolpica API. "
+                "Use google_search as fallback."
+            ),
+        }
+
+    races = payload.get("MRData", {}).get("RaceTable", {}).get("Races", [])
+    if not races:
+        return {
+            "status": "no_results",
+            "message": f"No race results found for {year}"
+            + (f" round {race_round}" if race_round else "")
+            + ".",
+        }
+
+    if race_round > 0:
+        parsed = _parse_race_results(races[0])
+    else:
+        # Return the latest race (last in the list)
+        parsed = _parse_race_results(races[-1])
+
+    return {
+        "status": "success",
+        "season": str(year),
+        **parsed,
+    }
+
+
 def get_tool_validation_error_counters() -> dict[str, int]:
     """Return a snapshot of validation error counters by tool/code."""
     return dict(_TOOL_VALIDATION_ERROR_COUNTER)
