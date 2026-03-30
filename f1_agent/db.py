@@ -6,6 +6,7 @@ Loads 14 Kaggle CSVs into a local SQLite database for fast SQL queries.
 import csv
 import re
 import sqlite3
+import threading
 from pathlib import Path
 
 from f1_agent.env_utils import get_package_dir
@@ -38,6 +39,8 @@ DB_DIR = _resolve_db_dir(_db_base_dir)
 DB_PATH = DB_DIR / "f1_history.db"
 
 _connection: sqlite3.Connection | None = None
+_connection_lock = threading.RLock()
+_query_lock = threading.Lock()
 
 # Discover CSV directory (name contains a newline from Kaggle export)
 _CSV_DIR: Path | None = None
@@ -267,65 +270,82 @@ INDICES = [
 ]
 
 
-def _clean_value(value: str) -> str | None:
+def _clean_value(value: str | None) -> str | None:
     """Convert CSV placeholders to None."""
-    if value in ("\\N", ""):
+    if value in ("\\N", "", None):
         return None
     return value
 
 
 def build_database() -> None:
     """Build the SQLite database from CSV files."""
-    if _CSV_DIR is None:
-        raise FileNotFoundError(
-            f"No 'Formula 1 World Championship' directory found in {DOCS_DIR}.\n"
-            "Place the Kaggle F1 dataset folder inside the docs/ directory."
-        )
+    global _connection
 
-    DB_DIR.mkdir(parents=True, exist_ok=True)
+    with _connection_lock, _query_lock:
+        if _CSV_DIR is None:
+            raise FileNotFoundError(
+                f"No 'Formula 1 World Championship' directory found in {DOCS_DIR}.\n"
+                "Place the Kaggle F1 dataset folder inside the docs/ directory."
+            )
 
-    # Remove existing DB to rebuild cleanly
-    if DB_PATH.exists():
-        DB_PATH.unlink()
+        if _connection is not None:
+            try:
+                _connection.close()
+            finally:
+                _connection = None
 
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
+        DB_DIR.mkdir(parents=True, exist_ok=True)
 
-    try:
-        # Create all tables
-        for create_sql in TABLES.values():
-            conn.execute(create_sql)
+        # Remove existing DB to rebuild cleanly
+        if DB_PATH.exists():
+            DB_PATH.unlink()
 
-        # Load data from CSVs
-        for table_name in TABLES:
-            csv_path = _CSV_DIR / f"{table_name}.csv"
-            if not csv_path.exists():
-                continue
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
 
-            with open(csv_path, newline="", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                columns = reader.fieldnames
-                if not columns:
+        try:
+            # Create all tables
+            for create_sql in TABLES.values():
+                conn.execute(create_sql)
+
+            # Load data from CSVs
+            for table_name in TABLES:
+                csv_path = _CSV_DIR / f"{table_name}.csv"
+                if not csv_path.exists():
                     continue
 
-                placeholders = ", ".join("?" for _ in columns)
-                col_names = ", ".join(columns)
-                sql = f"INSERT INTO {table_name} ({col_names}) VALUES ({placeholders})"
+                with open(csv_path, newline="", encoding="utf-8") as f:
+                    reader = csv.DictReader(f)
+                    columns = reader.fieldnames
+                    if not columns:
+                        continue
 
-                rows = [
-                    tuple(_clean_value(row[col]) for col in columns) for row in reader
-                ]
-                conn.executemany(sql, rows)
+                    placeholders = ", ".join("?" for _ in columns)
+                    col_names = ", ".join(columns)
+                    sql = (
+                        f"INSERT INTO {table_name} ({col_names}) VALUES ({placeholders})"
+                    )
 
-        # Create indices
-        for idx_sql in INDICES:
-            conn.execute(idx_sql)
+                    batch: list[tuple[str | None, ...]] = []
+                    for row in reader:
+                        batch.append(
+                            tuple(_clean_value(row.get(col)) for col in columns)
+                        )
+                        if len(batch) >= 1000:
+                            conn.executemany(sql, batch)
+                            batch.clear()
+                    if batch:
+                        conn.executemany(sql, batch)
 
-        conn.execute("ANALYZE")
-        conn.commit()
-    finally:
-        conn.close()
+            # Create indices
+            for idx_sql in INDICES:
+                conn.execute(idx_sql)
+
+            conn.execute("ANALYZE")
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def get_connection() -> sqlite3.Connection:
@@ -334,18 +354,25 @@ def get_connection() -> sqlite3.Connection:
     if _connection is not None:
         return _connection
 
-    if not DB_PATH.exists():
-        build_database()
+    with _connection_lock:
+        if _connection is not None:
+            return _connection
 
-    _connection = sqlite3.connect(
-        f"file:{DB_PATH}?mode=ro", uri=True, check_same_thread=False
-    )
-    _connection.row_factory = sqlite3.Row
-    _connection.execute("PRAGMA busy_timeout = 5000")
-    return _connection
+        if not DB_PATH.exists():
+            build_database()
+
+        _connection = sqlite3.connect(
+            f"file:{DB_PATH}?mode=ro", uri=True, check_same_thread=False
+        )
+        _connection.row_factory = sqlite3.Row
+        _connection.execute("PRAGMA busy_timeout = 5000")
+        return _connection
 
 
-_LIMIT_RE = re.compile(r"\bLIMIT\s+\d+", re.IGNORECASE)
+_TRAILING_LIMIT_RE = re.compile(
+    r"(?:\bLIMIT\s+\d+\s*(?:OFFSET\s+\d+)?|\bLIMIT\s+\d+\s*,\s*\d+)\s*;?\s*$",
+    re.IGNORECASE,
+)
 MAX_ROWS = 100
 
 
@@ -353,11 +380,12 @@ def execute_query(sql: str) -> list[dict]:
     """Execute a read-only SQL query and return results as a list of dicts."""
     conn = get_connection()
 
-    # Add LIMIT if not present
-    if not _LIMIT_RE.search(sql):
+    # Add LIMIT unless the outer query already has one at the end.
+    if not _TRAILING_LIMIT_RE.search(sql):
         sql = sql.rstrip().rstrip(";")
         sql = f"{sql} LIMIT {MAX_ROWS}"
 
-    cursor = conn.execute(sql)
-    rows = cursor.fetchmany(MAX_ROWS)
+    with _query_lock:
+        cursor = conn.execute(sql)
+        rows = cursor.fetchmany(MAX_ROWS)
     return [dict(row) for row in rows]
