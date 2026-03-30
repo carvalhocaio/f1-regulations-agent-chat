@@ -379,7 +379,6 @@ Q5 introduces a live-dataset path to continuously improve tool use and response 
 uv run python deployment/collect_live_failures.py \
   --eval-dataset-file data/evals/agent_regression.v1.jsonl \
   --eval-report-file eval_report.json \
-  --eval-gate-result-file eval_gate_result.json \
   --output-file data/fine_tuning_live/live_failures.raw.v1.jsonl
 ```
 
