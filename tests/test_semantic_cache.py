@@ -20,6 +20,17 @@ def _fake_embed(text):
     return vec / np.linalg.norm(vec)
 
 
+class _SwitchableEmbed:
+    def __init__(self, dim: int):
+        self.dim = dim
+
+    def embed_query(self, text):
+        vec = np.zeros(self.dim, dtype=np.float32)
+        idx = 0 if "old" in text.lower() else 1
+        vec[idx % self.dim] = 1.0
+        return vec.tolist()
+
+
 class SemanticCacheTests(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.mkdtemp()
@@ -125,6 +136,23 @@ class SemanticCacheTests(unittest.TestCase):
 
         rows = cache._conn.execute("SELECT COUNT(*) FROM cache_entries").fetchone()
         self.assertEqual(rows[0], 2)
+
+    def test_embedding_dimension_change_resets_cache(self):
+        from f1_agent.cache import SemanticCache
+
+        embed = _SwitchableEmbed(dim=2)
+        cache = SemanticCache(cache_dir=Path(self._tmpdir), embeddings=embed)
+
+        cache.put("Q-old", "A-old")
+        self.assertEqual(cache.get("Q-old"), "A-old")
+
+        embed.dim = 3
+        cache.put("Q-new", "A-new")
+
+        self.assertIsNone(cache.get("Q-old"))
+        self.assertEqual(cache.get("Q-new"), "A-new")
+        rows = cache._conn.execute("SELECT COUNT(*) FROM cache_entries").fetchone()
+        self.assertEqual(rows[0], 1)
 
 
 if __name__ == "__main__":

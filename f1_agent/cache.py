@@ -243,7 +243,18 @@ class SemanticCache:
                     evicted_count=evicted_count,
                 )
 
-            if self._vector_dim is None or q_vec.shape[0] != self._vector_dim:
+            if self._vector_dim is None:
+                return CacheLookupResult(
+                    answer=None,
+                    outcome="miss",
+                    lookup_ms=(time.perf_counter() - started) * 1000,
+                    candidates_scanned=0,
+                    similarity_top1=None,
+                    evicted_count=evicted_count,
+                )
+
+            if q_vec.shape[0] != self._vector_dim:
+                self._reset_for_embedding_dimension_change(int(q_vec.shape[0]))
                 return CacheLookupResult(
                     answer=None,
                     outcome="miss",
@@ -326,6 +337,11 @@ class SemanticCache:
                     "Cache embed failed on put; skipping cache", exc_info=True
                 )
                 return
+
+            new_dim = int(q_vec.shape[0])
+            if self._vector_dim is not None and new_dim != self._vector_dim:
+                self._reset_for_embedding_dimension_change(new_dim)
+
             ttl = _TTL_WEB if web_source else _TTL_STATIC
 
             blob = q_vec.astype(np.float32).tobytes()
@@ -384,6 +400,21 @@ class SemanticCache:
             return normalized
         normalized /= norm
         return normalized
+
+    def _reset_for_embedding_dimension_change(self, new_dim: int) -> None:
+        old_dim = self._vector_dim
+        logger.warning(
+            "Resetting semantic cache due to embedding dimension change old=%s new=%d",
+            old_dim,
+            new_dim,
+        )
+        self._conn.execute("DELETE FROM cache_entries")
+        self._conn.commit()
+        self._id_to_vector.clear()
+        self._vector_dim = new_dim
+        self._index = self._create_index(new_dim)
+        self._ops_since_sweep = 0
+        self._last_sweep_at = time.time()
 
     def _maybe_sweep(self, force: bool = False) -> int:
         self._ops_since_sweep += 1
