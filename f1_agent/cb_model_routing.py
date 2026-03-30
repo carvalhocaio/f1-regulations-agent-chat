@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 from datetime import UTC, datetime
-
-from google.genai import types
 
 from f1_agent.cb_helpers import _extract_user_text
 
@@ -91,49 +88,4 @@ def route_model(callback_context, llm_request):
 
     logger.debug("Routing to Flash (simple): %s", user_text[:80])
     llm_request.model = FLASH_MODEL
-    return None
-
-
-# ── Throughput request type ──────────────────────────────────────────────
-
-_DEFAULT_VERTEX_REQUEST_TYPE = "shared"
-_VALID_VERTEX_REQUEST_TYPES = {"shared", "dedicated"}
-
-
-def _resolve_vertex_request_type() -> str:
-    raw = os.environ.get("F1_VERTEX_LLM_REQUEST_TYPE", _DEFAULT_VERTEX_REQUEST_TYPE)
-    value = str(raw).strip().lower()
-    if value in _VALID_VERTEX_REQUEST_TYPES:
-        return value
-
-    logger.warning(
-        "Invalid F1_VERTEX_LLM_REQUEST_TYPE=%r; falling back to %s",
-        raw,
-        _DEFAULT_VERTEX_REQUEST_TYPE,
-    )
-    return _DEFAULT_VERTEX_REQUEST_TYPE
-
-
-def apply_throughput_request_type(callback_context, llm_request):
-    """Before-model callback: route request as shared or dedicated throughput.
-
-    Uses Vertex header ``X-Vertex-AI-LLM-Request-Type``:
-    - ``shared`` -> Dynamic Shared Quota (pay-as-you-go)
-    - ``dedicated`` -> Provisioned Throughput
-    """
-    del callback_context  # unused
-
-    request_type = _resolve_vertex_request_type()
-    if not llm_request.config:
-        llm_request.config = types.GenerateContentConfig()
-    if not llm_request.config.http_options:
-        llm_request.config.http_options = types.HttpOptions()
-
-    headers = dict(llm_request.config.http_options.headers or {})
-    headers["X-Vertex-AI-LLM-Request-Type"] = request_type
-    llm_request.config.http_options.headers = headers
-
-    logger.info(
-        "throughput_route | request_type=%s model=%s", request_type, llm_request.model
-    )
     return None

@@ -72,30 +72,12 @@ make dev
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
+| `GOOGLE_GENAI_USE_VERTEXAI` | No | `FALSE` | Keep runtime on Gemini API key mode (no Vertex routing) |
 | `GOOGLE_API_KEY` | Yes | — | Gemini API key for LLM and embeddings |
 | `GEMINI_EMBEDDING_MODEL` | No | `models/gemini-embedding-2-preview` | Embedding model for RAG and cache |
-| `F1_RAG_BACKEND` | No | `auto` | Regulations retrieval backend: `auto`, `local`, `vertex`, or `vector_search` |
-| `F1_RAG_CORPUS` | No | — | Vertex RAG corpus resource name (required when Vertex retrieval is used) |
-| `F1_RAG_PROJECT_ID` | No | — | Explicit project for Vertex RAG client initialization |
-| `F1_RAG_LOCATION` | No | — | Explicit location for Vertex RAG client initialization |
-| `F1_RAG_TOP_K` | No | `5` | Top-k retrieved chunks for Vertex RAG |
-| `F1_RAG_VECTOR_DISTANCE_THRESHOLD` | No | — | Optional retrieval distance threshold for Vertex RAG |
-| `F1_VECTOR_SEARCH_PARENT` | No | — | Vector Search collection path (`projects/.../locations/.../collections/...`) |
-| `F1_VECTOR_SEARCH_FIELD` | No | `embedding` | Vector field searched by Vertex Vector Search |
-| `F1_VECTOR_SEARCH_TOP_K` | No | `5` | Top-k retrieved chunks for Vector Search backend |
-| `F1_VECTOR_SEARCH_OUTPUT_FIELDS` | No | `data_fields,metadata_fields` | Output fields requested from Vector Search response |
-| `F1_EXAMPLE_STORE_ENABLED` | No | `false` | Enables dynamic few-shot retrieval from Example Store |
-| `F1_EXAMPLE_STORE_NAME` | No | — | Example Store resource name: `projects/.../locations/.../exampleStores/...` |
-| `F1_EXAMPLE_STORE_TOP_K` | No | `3` | Number of candidate examples retrieved per request |
-| `F1_EXAMPLE_STORE_MIN_SCORE` | No | `0.65` | Similarity threshold for injecting an example |
-| `F1_CODE_EXECUTION_ENABLED` | No | `false` | Enables restricted analytical Code Execution tool |
-| `F1_CODE_EXECUTION_LOCATION` | No | `us-central1` | Region for Code Execution sandboxes (currently only `us-central1`) |
-| `F1_CODE_EXECUTION_AGENT_ENGINE_NAME` | No | — | Agent Engine resource used as parent for sandbox operations |
-| `F1_CODE_EXECUTION_SANDBOX_TTL_SECONDS` | No | `3600` | TTL for sandbox lifecycle in seconds |
-| `F1_CODE_EXECUTION_MAX_ROWS` | No | `500` | Max list size accepted by analytical payload validators |
+| `F1_RAG_BACKEND` | No | `local` | Regulations retrieval backend (local-only) |
 | `F1_TOOL_METRICS_EXPORT_ENABLED` | No | `false` | Export tool validation errors as custom Cloud Monitoring metric |
-| `F1_TOOL_METRICS_PROJECT_ID` | No | — | Project id used when exporting tool validation metrics (fallbacks: `GOOGLE_CLOUD_PROJECT`, `F1_RAG_PROJECT_ID`) |
-| `F1_VERTEX_LLM_REQUEST_TYPE` | No | `shared` | Vertex Gemini throughput route: `shared` (DSQ) or `dedicated` (Provisioned Throughput) |
+| `F1_TOOL_METRICS_PROJECT_ID` | No | — | Project id used when exporting tool validation metrics (fallback: `GOOGLE_CLOUD_PROJECT`) |
 | `F1_GROUNDING_POLICY_ENABLED` | No | `true` | Enables grounding policy callback for factual-critical routes |
 | `F1_GROUNDING_POLICY_MODE` | No | `observe` | Grounding validation mode: `observe` (log only) or `enforce` (fallback on missing evidence) |
 | `F1_GROUNDING_TIME_SENSITIVE_SOURCE` | No | `google` | Source used for time-sensitive grounding policy (Phase 1 currently supports `google`) |
@@ -128,22 +110,20 @@ Before model:
   1. check_cache      — Return cached answer if similarity > 0.92        (cb_semantic_cache)
   2. inject_runtime_temporal_context — Inject current UTC date/year       (cb_temporal)
   3. inject_corrections — Append user corrections from this session       (cb_corrections)
-  4. inject_dynamic_examples — Retrieve real-error few-shots              (callbacks — inline)
-  5. route_model      — Route to Flash (simple) or Pro (complex)           (cb_model_routing)
-  6. apply_throughput_request_type — Set throughput route                  (cb_model_routing)
-  7. apply_grounding_policy — Attach grounding policy                     (cb_grounding)
-  8. apply_response_contract — Attach response schema                     (cb_response_validation)
-  9. preflight_token_check — Token budget guard                           (callbacks — inline)
+  4. route_model      — Route to Flash (simple) or Pro (complex)          (cb_model_routing)
+  5. apply_grounding_policy — Attach grounding policy                     (cb_grounding)
+  6. apply_response_contract — Attach response schema                     (cb_response_validation)
+  7. preflight_token_check — Token budget guard                           (callbacks — inline)
 
 After model:
-  10. log_context_cache_metrics — Context cache hit/miss logging          (callbacks — inline)
-  11. validate_structured_response — Schema validation                    (cb_response_validation)
-  12. validate_grounding_outcome — Grounding evidence check               (cb_grounding)
-  13. detect_corrections — Detect if the user corrected the agent         (cb_corrections)
-  14. store_cache      — Cache the answer (TTL: 30d static, 24h live)     (cb_semantic_cache)
+  8. log_context_cache_metrics — Context cache hit/miss logging           (callbacks — inline)
+  9. validate_structured_response — Schema validation                     (cb_response_validation)
+  10. validate_grounding_outcome — Grounding evidence check               (cb_grounding)
+  11. detect_corrections — Detect if the user corrected the agent         (cb_corrections)
+  12. store_cache      — Cache the answer (TTL: 30d static, 24h live)     (cb_semantic_cache)
 
 On error:
-  15. handle_rate_limit — User-friendly fallback after retry exhaustion (429/503)
+  13. handle_rate_limit — User-friendly fallback after retry exhaustion (429/503)
 
 Runtime resilience layer:
   - LLM runtime retries via Gemini `HttpRetryOptions` (exponential backoff + jitter)
@@ -181,20 +161,12 @@ Classification patterns for complex queries: comparisons (`vs`, `compare`, `dife
 
 Chunking is article-aware: separators prioritize `Article X.Y` boundaries, and article numbers are extracted into chunk metadata.
 
-### External RAG rollout (A4)
+### Local RAG backend
 
-`search_regulations` now supports a phased backend strategy:
+`search_regulations` is local-only:
 
-- `F1_RAG_BACKEND=local` — always use local FAISS+BM25 (`f1_agent/rag.py`)
-- `F1_RAG_BACKEND=vertex` — try Vertex RAG first; fallback to local if retrieval fails/returns empty
-- `F1_RAG_BACKEND=vector_search` — try Vertex Vector Search first; fallback to local if empty/unavailable
-- `F1_RAG_BACKEND=auto` (default) — try Vector Search, then Vertex RAG, then local fallback
-
-Adapters:
-- `f1_agent/rag_vertex.py` for Vertex RAG
-- `f1_agent/rag_vector_search.py` for Vertex Vector Search
-
-Both adapters normalize results to the same `Document` shape used by tool consumers.
+- `F1_RAG_BACKEND=local` — uses local FAISS+BM25 (`f1_agent/rag.py`)
+- Any other configured value is ignored and falls back to local mode
 
 ### Session Corrections
 
@@ -204,39 +176,6 @@ Both adapters normalize results to the same `Document` shape used by tool consum
 - **Storage**: Corrections stored in `callback_context.state["f1_corrections"]` (per-session)
 - **Injection**: Before each LLM call, stored corrections are appended to the system instruction
 - **Cap**: Maximum 20 corrections per session
-
-### Dynamic Few-shot (A5)
-
-`f1_agent/example_store.py` can retrieve semantically similar examples from a
-Vertex AI Example Store and inject compact guidance before model execution:
-
-- **Gate**: controlled by `F1_EXAMPLE_STORE_ENABLED`
-- **Retrieval**: `search_examples(stored_contents_example_key=<user_text>)`
-- **Selection**: top-k with `F1_EXAMPLE_STORE_TOP_K` + score filter via `F1_EXAMPLE_STORE_MIN_SCORE`
-- **Safety**: failures are non-blocking; the request continues without dynamic examples
-
-Curated dataset sync automation is out of scope in this local-only repository.
-
-### Restricted Code Execution (A6)
-
-`run_analytical_code` executes only allowlisted analytical templates in Agent
-Engine Code Execution sandboxes:
-
-- **Gate**: `F1_CODE_EXECUTION_ENABLED`
-- **Tasks**: `summary_stats`, `what_if_points`, `distribution_bins`
-- **Security model**: no arbitrary code input; payload is validated and mapped to predefined templates
-- **Region**: `us-central1` only
-- **Limits**: bounded payload size (`F1_CODE_EXECUTION_MAX_ROWS`) and sandbox TTL
-
-Example local env snippet:
-
-```bash
-F1_CODE_EXECUTION_ENABLED=true
-F1_CODE_EXECUTION_LOCATION=us-central1
-F1_CODE_EXECUTION_AGENT_ENGINE_NAME=projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>
-F1_CODE_EXECUTION_SANDBOX_TTL_SECONDS=3600
-F1_CODE_EXECUTION_MAX_ROWS=500
-```
 
 ### Local Sessions (A2)
 
@@ -287,7 +226,7 @@ uv run python -m unittest tests.test_model_routing -v
 | `test_artifact_path_resolution.py` | 4 | Flat vs nested artifact layouts |
 | `test_temporal_context.py` | 20+ | Dynamic year injection, temporal resolution and cache bypass |
 | `test_sessions_contract.py` | 9 | Anonymous identity, TTL helpers, session service selection |
-| `test_rag_backend.py` | 4 | A4 backend routing and local fallback behavior |
+| `test_rag_backend.py` | 2 | Local RAG backend selection behavior |
 | `test_season_info.py` | 4 | Current season info: completed/upcoming races, pre-season, API unavailable |
 
 ## Linting
@@ -330,7 +269,7 @@ The cache and RAG embedding paths both follow `GEMINI_EMBEDDING_MODEL`.
 | **Callbacks** | |
 | `f1_agent/callbacks.py` | Facade — re-exports all callbacks from `cb_*` submodules |
 | `f1_agent/cb_helpers.py` | Shared callback utilities (`_extract_user_text`, `_current_year`, etc.) |
-| `f1_agent/cb_model_routing.py` | Model routing (`route_model`) and throughput request type |
+| `f1_agent/cb_model_routing.py` | Model routing (`route_model`) |
 | `f1_agent/cb_temporal.py` | Temporal context injection and relative-time resolution |
 | `f1_agent/cb_semantic_cache.py` | Semantic cache callbacks (`check_cache`, `store_cache`) |
 | `f1_agent/cb_corrections.py` | Session corrections detection and injection |
@@ -339,14 +278,13 @@ The cache and RAG embedding paths both follow `GEMINI_EMBEDDING_MODEL`.
 | **Tools** | |
 | `f1_agent/tools.py` | Facade — re-exports all tools from `tools_*` submodules |
 | `f1_agent/tools_validation.py` | Shared tool input validation and error helpers |
-| `f1_agent/tools_rag.py` | `search_regulations` + RAG backend selection/fallback |
+| `f1_agent/tools_rag.py` | `search_regulations` local retrieval wrapper |
 | `f1_agent/tools_sql.py` | `query_f1_history`, `query_f1_history_template` |
 | `f1_agent/tools_jolpica.py` | `get_current_season_info`, `search_recent_results` |
 | **Infrastructure** | |
 | `f1_agent/cache.py` | Semantic answer cache (FAISS + SQLite with TTL) |
 | `f1_agent/env_utils.py` | Environment helpers (`env_bool`, `env_int`, `get_package_dir`) |
 | `f1_agent/rag.py` | RAG pipeline: PDF loading, article-aware chunking, FAISS + BM25 hybrid search |
-| `f1_agent/rag_vertex.py` | Vertex RAG adapter (`auto|local|vertex`) |
 | `f1_agent/db.py` | SQLite DB: schema builder (from Kaggle CSVs), read-only query execution |
 | `f1_agent/sql_templates.py` | 15 parameterized SQL templates for common F1 queries |
 | `f1_agent/prompts/system_instruction_static.txt` | Externalized system prompt with few-shot examples |

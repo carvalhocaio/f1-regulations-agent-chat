@@ -81,7 +81,7 @@ def build_session_identity(
 
 
 def session_ttl_config(ttl_seconds: int | None) -> dict[str, str] | None:
-    """Build the Vertex Sessions config payload for TTL.
+    """Build the session config payload for TTL.
 
     Returns ``None`` if no TTL is provided.
     """

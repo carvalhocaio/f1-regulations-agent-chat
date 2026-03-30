@@ -11,8 +11,6 @@ from f1_agent.tools_jolpica import (  # noqa: F401
 )
 from f1_agent.tools_rag import (  # noqa: F401
     _search_regulations_local,
-    _search_regulations_vector_search,
-    _search_regulations_vertex,
     _selected_rag_backend,
     search_regulations,
 )

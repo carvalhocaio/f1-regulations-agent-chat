@@ -95,7 +95,6 @@ def _resolve_project_id() -> str:
     return (
         os.environ.get(_PROJECT_ENV, "").strip()
         or os.environ.get("GOOGLE_CLOUD_PROJECT", "").strip()
-        or os.environ.get("F1_RAG_PROJECT_ID", "").strip()
     )
 
 

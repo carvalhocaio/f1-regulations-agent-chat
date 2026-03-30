@@ -13,11 +13,9 @@ from google.genai import types
 from f1_agent.callbacks import (
     apply_grounding_policy,
     apply_response_contract,
-    apply_throughput_request_type,
     check_cache,
     detect_corrections,
     inject_corrections,
-    inject_dynamic_examples,
     inject_runtime_temporal_context,
     log_context_cache_metrics,
     preflight_token_check,
@@ -26,7 +24,6 @@ from f1_agent.callbacks import (
     validate_grounding_outcome,
     validate_structured_response,
 )
-from f1_agent.code_execution import run_analytical_code
 from f1_agent.env_utils import env_bool, env_float, env_int
 from f1_agent.resilience import is_quota_or_unavailable_error
 from f1_agent.tools import (
@@ -51,7 +48,6 @@ def _build_tools():
         search_regulations,
         query_f1_history_template,
         query_f1_history,
-        run_analytical_code,
         get_current_season_info,
         search_recent_results,
     ]
@@ -194,9 +190,7 @@ root_agent = Agent(
         check_cache,
         inject_runtime_temporal_context,
         inject_corrections,
-        inject_dynamic_examples,
         route_model,
-        apply_throughput_request_type,
         apply_grounding_policy,
         apply_response_contract,
         preflight_token_check,

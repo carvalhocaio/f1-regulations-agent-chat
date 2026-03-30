@@ -16,12 +16,6 @@ class AgentToolContractTests(unittest.TestCase):
         self.assertNotIn("`search`", instruction)
         self.assertIn("Never invent tool names", instruction)
 
-    def test_instruction_mentions_analytical_sandbox_tool(self):
-        instruction = root_agent.static_instruction
-
-        self.assertIn("run_analytical_code", instruction)
-        self.assertIn("summary_stats", instruction)
-
     def test_instruction_loaded_from_template(self):
         instruction = root_agent.static_instruction
 
@@ -42,7 +36,6 @@ class AgentToolContractTests(unittest.TestCase):
         self.assertIn("search_regulations", tool_names)
         self.assertIn("query_f1_history", tool_names)
         self.assertIn("query_f1_history_template", tool_names)
-        self.assertIn("run_analytical_code", tool_names)
         self.assertIn("get_current_season_info", tool_names)
         self.assertIn("search_recent_results", tool_names)
         self.assertIn("google_search", tool_names)
@@ -60,24 +53,15 @@ class AgentToolContractTests(unittest.TestCase):
         self.assertIn("Current year", instruction)
         self.assertIn("get_current_season_info", instruction)
 
-    def test_before_model_callback_includes_dynamic_examples(self):
+    def test_before_model_callback_order(self):
         callback_names = [cb.__name__ for cb in root_agent.before_model_callback]
 
-        self.assertIn("inject_dynamic_examples", callback_names)
         self.assertLess(
             callback_names.index("inject_corrections"),
-            callback_names.index("inject_dynamic_examples"),
-        )
-        self.assertLess(
-            callback_names.index("inject_dynamic_examples"),
             callback_names.index("route_model"),
         )
         self.assertLess(
             callback_names.index("route_model"),
-            callback_names.index("apply_throughput_request_type"),
-        )
-        self.assertLess(
-            callback_names.index("apply_throughput_request_type"),
             callback_names.index("apply_grounding_policy"),
         )
         self.assertLess(

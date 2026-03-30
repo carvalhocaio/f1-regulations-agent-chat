@@ -29,13 +29,11 @@ from f1_agent.cb_helpers import (  # noqa: F401
     _current_date,
     _current_year,
     _extract_user_text,
-    _prepend_user_context,
 )
 from f1_agent.cb_model_routing import (  # noqa: F401
     FLASH_MODEL,
     _is_complex_question,
     _is_pro_quota_exhausted,
-    apply_throughput_request_type,
     route_model,
 )
 from f1_agent.cb_response_validation import (  # noqa: F401
@@ -55,34 +53,12 @@ from f1_agent.cb_temporal import (  # noqa: F401
     _runtime_temporal_addendum,
     inject_runtime_temporal_context,
 )
-from f1_agent.example_store import build_dynamic_examples_addendum
 from f1_agent.token_preflight import check_and_truncate as _check_and_truncate
 
 logger = logging.getLogger(__name__)
 
 
 # ── Small inline callbacks (not worth their own module) ──────────────────
-
-
-def inject_dynamic_examples(callback_context, llm_request):
-    """Before-model callback: inject retrieved Example Store few-shots."""
-    user_text = _extract_user_text(callback_context, llm_request)
-    addendum, metadata = build_dynamic_examples_addendum(user_text)
-    if not addendum:
-        logger.debug(
-            "Dynamic examples skipped (enabled=%s, configured=%s)",
-            metadata.get("enabled"),
-            metadata.get("store_configured"),
-        )
-        return None
-
-    _prepend_user_context(llm_request, addendum)
-    logger.info(
-        "Injected dynamic examples: count=%s top_similarity=%s",
-        metadata.get("example_count"),
-        metadata.get("top_similarity"),
-    )
-    return None
 
 
 def preflight_token_check(callback_context, llm_request):

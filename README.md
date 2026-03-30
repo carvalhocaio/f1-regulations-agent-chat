@@ -21,15 +21,11 @@ the original CLI project.
 
 - `search_regulations`
   - Hybrid search over FIA 2026 docs (FAISS semantic + BM25 keyword).
-  - Backend mode via `F1_RAG_BACKEND`: `auto`, `local`, `vertex`, `vector_search`.
+  - Backend mode via `F1_RAG_BACKEND`: `local`.
 - `query_f1_history_template`
   - Uses 15 curated SQL templates for common historical queries.
 - `query_f1_history`
   - Read-only raw SQL over local SQLite historical DB (SELECT-only; row cap 100).
-- `run_analytical_code`
-  - Restricted analytical sandbox with allowlisted task types:
-    `summary_stats`, `what_if_points`, `distribution_bins`.
-  - Feature-flagged (`F1_CODE_EXECUTION_ENABLED`).
 - `get_current_season_info`
   - Current F1 season metadata.
 - `search_recent_results`
@@ -42,7 +38,6 @@ the original CLI project.
 - Runtime temporal context injection to prevent stale year assumptions.
 - Relative-time resolution and local DB coverage enforcement (1950-2024).
 - Session corrections memory (PT/EN pattern detection and reinjection).
-- Dynamic few-shot injection from Example Store (optional).
 - Structured response contracts and schema validation (optional/route-driven).
 - Grounding policy callback (`observe` or `enforce` mode).
 - Token preflight check with CountTokens API and progressive context truncation.
@@ -70,7 +65,6 @@ LLM + tools:
   - search_regulations
   - query_f1_history_template
   - query_f1_history
-  - run_analytical_code (optional)
   - get_current_season_info
   - search_recent_results
     |
@@ -104,9 +98,7 @@ GOOGLE_API_KEY=your-gemini-api-key
 # GEMINI_EMBEDDING_MODEL=models/gemini-embedding-2-preview
 
 # Optional runtime toggles
-# F1_RAG_BACKEND=auto
-# F1_EXAMPLE_STORE_ENABLED=false
-# F1_CODE_EXECUTION_ENABLED=false
+# F1_RAG_BACKEND=local
 # F1_STRUCTURED_RESPONSE_ENABLED=true
 # F1_GROUNDING_POLICY_ENABLED=true
 # F1_GROUNDING_POLICY_MODE=observe
@@ -165,19 +157,10 @@ Session CRUD endpoints are also available (create, get, list, delete).
 
 ### Retrieval
 
-- `F1_RAG_BACKEND`: `auto|local|vertex|vector_search`.
-- `F1_RAG_CORPUS`, `F1_RAG_PROJECT_ID`, `F1_RAG_LOCATION`, `F1_RAG_TOP_K`.
-- `F1_RAG_VECTOR_DISTANCE_THRESHOLD`.
-- `F1_VECTOR_SEARCH_PARENT`, `F1_VECTOR_SEARCH_FIELD`,
-  `F1_VECTOR_SEARCH_TOP_K`, `F1_VECTOR_SEARCH_OUTPUT_FIELDS`.
+- `F1_RAG_BACKEND`: `local`.
 
 ### Optional Feature Flags
 
-- `F1_EXAMPLE_STORE_ENABLED`, `F1_EXAMPLE_STORE_NAME`,
-  `F1_EXAMPLE_STORE_TOP_K`, `F1_EXAMPLE_STORE_MIN_SCORE`.
-- `F1_CODE_EXECUTION_ENABLED`, `F1_CODE_EXECUTION_LOCATION`,
-  `F1_CODE_EXECUTION_AGENT_ENGINE_NAME`,
-  `F1_CODE_EXECUTION_SANDBOX_TTL_SECONDS`, `F1_CODE_EXECUTION_MAX_ROWS`.
 - `F1_STRUCTURED_RESPONSE_ENABLED`.
 - `F1_GROUNDING_POLICY_ENABLED`, `F1_GROUNDING_POLICY_MODE`,
   `F1_GROUNDING_TIME_SENSITIVE_SOURCE`.

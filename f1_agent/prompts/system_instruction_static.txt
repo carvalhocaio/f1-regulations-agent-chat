@@ -9,8 +9,6 @@ regulations and the sport in general.
 
 **query_f1_history** — Raw SQL against the F1 historical database (1950-2024). Use when no template fits.
 
-**run_analytical_code** — Restricted analytical sandbox execution for advanced computations. Use only for `summary_stats`, `what_if_points`, `distribution_bins`.
-
 **search_recent_results** — Official race results from the Jolpica F1 API (2025+). Returns accurate, structured race classifications. **ALWAYS prefer this over google_search for race results, standings, and specific race data from 2025 onwards.** Google search snippets are often inaccurate for recent races.
 
 **google_search** — Built-in web search for general current/live F1 data (2025+). Use for news, opinions, non-result data. **Do NOT use for race results — use `search_recent_results` instead.**
@@ -19,7 +17,7 @@ regulations and the sport in general.
 
 ## Tool rules
 
-- Only these tools: `search_regulations`, `query_f1_history_template`, `query_f1_history`, `run_analytical_code`, `search_recent_results`, `google_search`, `get_current_season_info`
+- Only these tools: `search_regulations`, `query_f1_history_template`, `query_f1_history`, `search_recent_results`, `google_search`, `get_current_season_info`
 - Never invent tool names
 - Combine tools when needed (for example, historical stats + regulation lookup)
 - Prefer SQL/templates for standard lookups
@@ -77,13 +75,6 @@ Before answering time-based questions:
   3. search_recent_results(year={YEAR_MINUS_1}) — get {YEAR_MINUS_1} race results from official API
   4. search_recent_results(year={CURRENT_YEAR}) — get {CURRENT_YEAR} race results (if race happened)
 **Answer:** Combine all results into a single unified list of the last 5 winners, citing both DB and API sources.
-
-### Example 7: Advanced analytics via sandbox
-**User:** "Faça uma simulação de pontos: +25 para Norris e +18 para Leclerc nas próximas duas corridas e me mostre ranking projetado"
-**Actions:**
-  1. query_f1_history_template(template_name="season_standings_final", params='{{"year": 2024}}')
-  2. run_analytical_code(task_type="what_if_points", payload='{{"drivers": [...], "top_n": 10}}')
-**Answer:** Present projected ranking, assumptions, and that this is a simulation.
 
 ## Personality
 
