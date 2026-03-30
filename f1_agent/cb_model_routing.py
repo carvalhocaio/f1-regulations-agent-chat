@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from google.genai import types
 
@@ -58,9 +58,10 @@ def _is_pro_quota_exhausted(callback_context) -> bool:
         return False
     try:
         ts = datetime.fromisoformat(exhausted_at)
-        elapsed_hours = (datetime.now(timezone.utc) - ts.replace(
-            tzinfo=timezone.utc if ts.tzinfo is None else ts.tzinfo
-        )).total_seconds() / 3600
+        elapsed_hours = (
+            datetime.now(UTC)
+            - ts.replace(tzinfo=UTC if ts.tzinfo is None else ts.tzinfo)
+        ).total_seconds() / 3600
         if elapsed_hours > _PRO_QUOTA_FALLBACK_HOURS:
             state.pop(_PRO_QUOTA_STATE_KEY, None)
             return False
@@ -81,9 +82,7 @@ def route_model(callback_context, llm_request):
         return None
 
     if _is_pro_quota_exhausted(callback_context):
-        logger.info(
-            "Routing to Flash (Pro quota exhausted): %s", user_text[:80]
-        )
+        logger.info("Routing to Flash (Pro quota exhausted): %s", user_text[:80])
         llm_request.model = FLASH_MODEL
         return None
 

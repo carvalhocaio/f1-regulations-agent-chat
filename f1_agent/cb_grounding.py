@@ -129,7 +129,9 @@ def apply_grounding_policy(callback_context, llm_request):
     )
     _prepend_user_context(llm_request, addendum)
 
-    if isinstance(state, dict) and not _extract_response_contract_id_from_state(callback_context):
+    if isinstance(state, dict) and not _extract_response_contract_id_from_state(
+        callback_context
+    ):
         state["f1_response_contract_id"] = CONTRACT_ID_SOURCES_BLOCK_V1
         state[_AUTO_GROUNDING_CONTRACT_STATE_KEY] = True
 

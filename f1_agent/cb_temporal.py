@@ -202,8 +202,12 @@ def _resolve_temporal_references(user_text: str) -> str | None:
         to_year = last_completed
         # Event-specific terms (winners, podiums) may include current year
         _event_terms = (
-            "vencedor", "winner", "podium", "pódio",
-            "campe", "champion",
+            "vencedor",
+            "winner",
+            "podium",
+            "pódio",
+            "campe",
+            "champion",
         )
         is_event_query = any(t in matched_term for t in _event_terms)
         resolutions.append(

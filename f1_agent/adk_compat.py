@@ -19,8 +19,8 @@ from google.genai import types
 _USING_REAL_ADK = False
 
 try:  # pragma: no cover - exercised only in environments with google.adk
-    from google.adk import Runner as Runner
     from google.adk import Agent as Agent
+    from google.adk import Runner as Runner
     from google.adk.apps import App as App
     from google.adk.models import Gemini as Gemini
     from google.adk.models.llm_response import LlmResponse as LlmResponse
@@ -34,6 +34,7 @@ try:  # pragma: no cover - exercised only in environments with google.adk
 
     _USING_REAL_ADK = True
 except Exception:  # pragma: no cover - normal path in CI without ADK
+
     @dataclass
     class LlmResponse:
         content: types.Content
@@ -125,4 +126,3 @@ except Exception:  # pragma: no cover - normal path in CI without ADK
         session_service: InMemorySessionService | None = None
         memory_service: Any = None
         auto_create_session: bool = True
-

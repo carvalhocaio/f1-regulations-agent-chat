@@ -7,7 +7,7 @@ import logging
 import threading
 import time
 import urllib.request
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Any
 
 from f1_agent.tools_validation import _tool_error
@@ -63,7 +63,7 @@ def get_current_season_info() -> dict[str, Any]:
     Use this tool to determine if the current F1 season has started and
     whether a specific Grand Prix has already taken place this year.
     """
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     races = _fetch_season_calendar()
 
     if not races:

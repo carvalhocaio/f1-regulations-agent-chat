@@ -1,9 +1,8 @@
 """Tests for get_current_season_info tool."""
 
-import json
 import unittest
 from datetime import date
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from f1_agent.tools import get_current_season_info
 

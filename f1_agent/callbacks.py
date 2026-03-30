@@ -25,9 +25,9 @@ from f1_agent.cb_grounding import (  # noqa: F401
     validate_grounding_outcome,
 )
 from f1_agent.cb_helpers import (  # noqa: F401
+    _DB_MAX_YEAR,
     _current_date,
     _current_year,
-    _DB_MAX_YEAR,
     _extract_user_text,
     _prepend_user_context,
 )

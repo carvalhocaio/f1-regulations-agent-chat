@@ -3,9 +3,6 @@ import warnings
 from datetime import datetime
 from pathlib import Path
 
-# Suppress ADK experimental feature warnings
-warnings.filterwarnings("ignore", message=r"\[EXPERIMENTAL\]")
-
 from google.genai import types
 
 from f1_agent.adk_compat import (
@@ -41,6 +38,9 @@ from f1_agent.tools import (
     search_recent_results,
     search_regulations,
 )
+
+# Suppress ADK experimental feature warnings
+warnings.filterwarnings("ignore", message=r"\[EXPERIMENTAL\]")
 
 CURRENT_YEAR = datetime.now().year
 

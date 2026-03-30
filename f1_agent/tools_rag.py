@@ -6,7 +6,11 @@ import logging
 import os
 
 from f1_agent.rag import hybrid_search
-from f1_agent.tools_validation import _MAX_QUERY_LEN, _normalize_non_empty_text, _tool_error
+from f1_agent.tools_validation import (
+    _MAX_QUERY_LEN,
+    _normalize_non_empty_text,
+    _tool_error,
+)
 
 logger = logging.getLogger(__name__)
 
