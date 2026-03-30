@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from f1_agent.adk_compat import Runner
+from google.adk import Runner
+
 from f1_agent.agent import build_app
 from f1_agent.sessions import build_adk_session_service
 

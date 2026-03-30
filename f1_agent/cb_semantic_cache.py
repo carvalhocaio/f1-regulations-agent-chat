@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import logging
 
+from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 
-from f1_agent.adk_compat import LlmResponse
 from f1_agent.cache import SemanticCache
 from f1_agent.cb_helpers import _extract_user_text
 from f1_agent.cb_temporal import _classify_cache_query, _query_requires_web_data

@@ -1,7 +1,8 @@
 import unittest
 from unittest import mock
 
-from f1_agent.adk_compat import InMemorySessionService
+from google.adk.sessions import InMemorySessionService
+
 from f1_agent.sessions import (
     anonymous_user_id,
     build_adk_session_service,

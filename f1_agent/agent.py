@@ -3,15 +3,13 @@ import warnings
 from datetime import datetime
 from pathlib import Path
 
+from google.adk import Agent
+from google.adk.apps import App
+from google.adk.models import Gemini
+from google.adk.models.llm_response import LlmResponse
+from google.adk.tools.google_search_tool import GoogleSearchTool
 from google.genai import types
 
-from f1_agent.adk_compat import (
-    Agent,
-    App,
-    Gemini,
-    GoogleSearchTool,
-    LlmResponse,
-)
 from f1_agent.callbacks import (
     apply_grounding_policy,
     apply_response_contract,

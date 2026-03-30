@@ -14,7 +14,7 @@ import os
 import re
 from dataclasses import dataclass
 
-from f1_agent.adk_compat import InMemorySessionService
+from google.adk.sessions import InMemorySessionService
 
 logger = logging.getLogger(__name__)
 
