@@ -9,7 +9,9 @@ Improvements over the baseline:
 - Reciprocal rank fusion to combine semantic + keyword results
 """
 
+import logging
 import re
+import time
 from pathlib import Path
 from typing import cast
 
@@ -23,6 +25,8 @@ from pydantic import SecretStr
 from rank_bm25 import BM25Okapi
 
 from f1_agent.env_utils import get_package_dir
+
+logger = logging.getLogger(__name__)
 
 DOCS_DIR = Path(__file__).parent.parent / "docs"
 
@@ -59,6 +63,27 @@ EMBEDDING_MODEL: str = cast(
     ),
 )
 
+BUILD_EMBED_BATCH_SIZE: int = cast(
+    int,
+    config("F1_BUILD_EMBED_BATCH_SIZE", default=20, cast=int),
+)
+BUILD_EMBED_MAX_RETRIES: int = cast(
+    int,
+    config("F1_BUILD_EMBED_MAX_RETRIES", default=6, cast=int),
+)
+BUILD_EMBED_BASE_DELAY_S: float = cast(
+    float,
+    config("F1_BUILD_EMBED_BASE_DELAY_S", default=2.0, cast=float),
+)
+BUILD_EMBED_MAX_DELAY_S: float = cast(
+    float,
+    config("F1_BUILD_EMBED_MAX_DELAY_S", default=90.0, cast=float),
+)
+BUILD_EMBED_SLEEP_BETWEEN_BATCHES_S: float = cast(
+    float,
+    config("F1_BUILD_EMBED_SLEEP_BETWEEN_BATCHES_S", default=0.35, cast=float),
+)
+
 SECTION_PATTERN = re.compile(
     r"section[_ ]+([a-f])[_ \[]+(.+?)[\]_ ]*-[_ ]*iss",
     re.IGNORECASE,
@@ -90,6 +115,79 @@ def _get_embeddings() -> GoogleGenerativeAIEmbeddings:
         model=EMBEDDING_MODEL,
         api_key=SecretStr(api_key),
     )
+
+
+def _extract_retry_delay_seconds(error_text: str) -> float | None:
+    retry_matches = [
+        re.search(r"Please retry in\s+([0-9]+(?:\.[0-9]+)?)s", error_text),
+        re.search(r"'retryDelay':\s*'([0-9]+)s'", error_text),
+    ]
+    for match in retry_matches:
+        if match:
+            try:
+                return float(match.group(1))
+            except ValueError:
+                return None
+    return None
+
+
+def _is_rate_limited_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "429" in text or "resource_exhausted" in text
+
+
+class _ResilientEmbeddings:
+    def __init__(self, base: GoogleGenerativeAIEmbeddings):
+        self._base = base
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._base.embed_query(text)
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+
+        batch_size = max(1, BUILD_EMBED_BATCH_SIZE)
+        max_retries = max(1, BUILD_EMBED_MAX_RETRIES)
+        base_delay = max(0.1, BUILD_EMBED_BASE_DELAY_S)
+        max_delay = max(base_delay, BUILD_EMBED_MAX_DELAY_S)
+        per_batch_sleep = max(0.0, BUILD_EMBED_SLEEP_BETWEEN_BATCHES_S)
+
+        embeddings: list[list[float]] = []
+
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            attempt = 0
+            while True:
+                try:
+                    batch_embeddings = self._base.embed_documents(
+                        batch,
+                        batch_size=batch_size,
+                    )
+                    embeddings.extend(batch_embeddings)
+                    if per_batch_sleep > 0:
+                        time.sleep(per_batch_sleep)
+                    break
+                except Exception as exc:
+                    attempt += 1
+                    if not _is_rate_limited_error(exc) or attempt >= max_retries:
+                        raise
+
+                    retry_after = _extract_retry_delay_seconds(str(exc))
+                    exp_backoff = min(max_delay, base_delay * (2 ** (attempt - 1)))
+                    sleep_s = max(retry_after or 0.0, exp_backoff)
+                    logger.warning(
+                        "Embedding rate limited while building index; "
+                        "retrying batch %d-%d in %.2fs (attempt %d/%d)",
+                        i,
+                        min(i + len(batch), len(texts)),
+                        sleep_s,
+                        attempt,
+                        max_retries,
+                    )
+                    time.sleep(sleep_s)
+
+        return embeddings
 
 
 # Regex to extract article numbers from regulation text (e.g. "3.2.1", "12.4")
@@ -145,7 +243,7 @@ def build_vector_store() -> FAISS:
 
         all_chunks.extend(chunks)
 
-    embeddings = _get_embeddings()
+    embeddings = _ResilientEmbeddings(_get_embeddings())
     vector_store = FAISS.from_documents(all_chunks, embeddings)
 
     VECTOR_STORE_DIR.mkdir(parents=True, exist_ok=True)
