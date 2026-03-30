@@ -65,9 +65,9 @@ def _load_static_instruction() -> str:
 
     This instruction is placed in ``static_instruction`` so that ADK keeps it
     as a stable system-instruction prefix, enabling Gemini context caching
-    (both implicit and explicit).  Dynamic per-request content (temporal
-    context, corrections, memories, examples) is injected separately into
-    user content by before-model callbacks.
+    (both implicit and explicit). Dynamic per-request content (temporal
+    context, corrections, examples) is injected separately into user content
+    by before-model callbacks.
     """
     template = (_PROMPTS_DIR / "system_instruction_static.txt").read_text(
         encoding="utf-8"
