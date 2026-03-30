@@ -22,6 +22,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pydantic import SecretStr
 from rank_bm25 import BM25Okapi
 
+from f1_agent.env_utils import get_package_dir
+
 DOCS_DIR = Path(__file__).parent.parent / "docs"
 
 
@@ -37,19 +39,12 @@ def _resolve_vector_store_dir(base_dir: Path) -> Path:
     return base_dir
 
 
-def _get_package_dir(pkg: object) -> Path:
-    pkg_file = getattr(pkg, "__file__", None)
-    if pkg_file is not None:
-        return Path(pkg_file).parent
-    return Path(getattr(pkg, "__path__")[0])
-
-
 # When deployed, vector_store is an installed package in site-packages.
 # Locally, it's a sibling directory of f1_agent.
 try:
     import vector_store as _vs_pkg
 
-    _vector_store_base_dir = _get_package_dir(_vs_pkg)
+    _vector_store_base_dir = get_package_dir(_vs_pkg)
 except ImportError:
     _vector_store_base_dir = Path(__file__).parent.parent / "vector_store"
 

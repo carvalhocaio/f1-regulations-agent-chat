@@ -30,13 +30,13 @@ def _fake_races(dates: list[str], season: str = "2026") -> list[dict]:
 class TestGetCurrentSeasonInfo(unittest.TestCase):
     def setUp(self):
         # Reset cache between tests
-        from f1_agent import tools
+        from f1_agent import tools_jolpica
 
-        tools._season_cache["data"] = None
-        tools._season_cache["fetched_at"] = 0.0
+        tools_jolpica._season_cache["data"] = None
+        tools_jolpica._season_cache["fetched_at"] = 0.0
 
-    @patch("f1_agent.tools._fetch_season_calendar")
-    @patch("f1_agent.tools.datetime")
+    @patch("f1_agent.tools_jolpica._fetch_season_calendar")
+    @patch("f1_agent.tools_jolpica.datetime")
     def test_returns_completed_and_upcoming(self, mock_dt, mock_fetch):
         mock_dt.now.return_value.date.return_value = date(2026, 3, 29)
         mock_dt.side_effect = lambda *a, **kw: date(*a, **kw) if a else mock_dt
@@ -54,8 +54,8 @@ class TestGetCurrentSeasonInfo(unittest.TestCase):
         self.assertIsNotNone(result["next_race"])
         self.assertEqual(result["next_race"]["date"], "2026-04-12")
 
-    @patch("f1_agent.tools._fetch_season_calendar")
-    @patch("f1_agent.tools.datetime")
+    @patch("f1_agent.tools_jolpica._fetch_season_calendar")
+    @patch("f1_agent.tools_jolpica.datetime")
     def test_pre_season(self, mock_dt, mock_fetch):
         mock_dt.now.return_value.date.return_value = date(2026, 1, 15)
         mock_dt.side_effect = lambda *a, **kw: date(*a, **kw) if a else mock_dt
@@ -67,7 +67,7 @@ class TestGetCurrentSeasonInfo(unittest.TestCase):
         self.assertFalse(result["season_started"])
         self.assertEqual(result["completed_count"], 0)
 
-    @patch("f1_agent.tools._fetch_season_calendar")
+    @patch("f1_agent.tools_jolpica._fetch_season_calendar")
     def test_api_unavailable(self, mock_fetch):
         mock_fetch.return_value = []
 
@@ -76,8 +76,8 @@ class TestGetCurrentSeasonInfo(unittest.TestCase):
         self.assertEqual(result["status"], "unavailable")
         self.assertIn("google_search", result["message"])
 
-    @patch("f1_agent.tools._fetch_season_calendar")
-    @patch("f1_agent.tools.datetime")
+    @patch("f1_agent.tools_jolpica._fetch_season_calendar")
+    @patch("f1_agent.tools_jolpica.datetime")
     def test_all_races_completed(self, mock_dt, mock_fetch):
         mock_dt.now.return_value.date.return_value = date(2026, 12, 15)
         mock_dt.side_effect = lambda *a, **kw: date(*a, **kw) if a else mock_dt

@@ -18,6 +18,7 @@ import vertexai
 from google import genai
 from google.api_core import exceptions as gcp_exceptions
 
+from f1_agent.env_utils import env_bool, env_int
 from f1_agent.resilience import CircuitBreakerOpenError, run_with_retry
 
 logger = logging.getLogger(__name__)
@@ -116,13 +117,13 @@ def _load_settings() -> CodeExecutionSettings:
     fallback_agent = _agent_name_from_env(project_id, location)
 
     return CodeExecutionSettings(
-        enabled=_env_bool(_ENABLED_ENV, False),
+        enabled=env_bool(_ENABLED_ENV, False),
         project_id=project_id,
         location=location,
         agent_engine_name=configured_agent_name or fallback_agent,
-        sandbox_ttl_seconds=max(300, _env_int(_TTL_SECONDS_ENV, _DEFAULT_TTL_SECONDS)),
-        max_rows=max(10, _env_int(_MAX_ROWS_ENV, _DEFAULT_MAX_ROWS)),
-        max_values=max(100, _env_int(_MAX_VALUES_ENV, _DEFAULT_MAX_VALUES)),
+        sandbox_ttl_seconds=max(300, env_int(_TTL_SECONDS_ENV, _DEFAULT_TTL_SECONDS)),
+        max_rows=max(10, env_int(_MAX_ROWS_ENV, _DEFAULT_MAX_ROWS)),
+        max_values=max(100, env_int(_MAX_VALUES_ENV, _DEFAULT_MAX_VALUES)),
     )
 
 
@@ -431,21 +432,3 @@ def _to_float(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Expected numeric value, got {value!r}") from exc
-
-
-def _env_bool(name: str, default: bool) -> bool:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return int(raw.strip())
-    except (TypeError, ValueError):
-        logger.warning("Invalid integer in %s=%r; using default %d", name, raw, default)
-        return default

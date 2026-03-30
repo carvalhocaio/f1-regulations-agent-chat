@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 
 def env_bool(name: str, default: bool) -> bool:
@@ -30,3 +31,11 @@ def env_float(name: str, default: float) -> float:
         return float(raw.strip())
     except (TypeError, ValueError):
         return default
+
+
+def get_package_dir(pkg: object) -> Path:
+    """Resolve the directory of an installed or local package."""
+    pkg_file = getattr(pkg, "__file__", None)
+    if pkg_file is not None:
+        return Path(pkg_file).parent
+    return Path(getattr(pkg, "__path__")[0])

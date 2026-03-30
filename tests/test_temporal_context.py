@@ -85,19 +85,19 @@ class TemporalContextTests(unittest.TestCase):
     def test_query_requires_web_for_next_gp_without_year(self):
         self.assertTrue(_query_requires_web_data("Qual é o próximo GP?"))
 
-    @patch("f1_agent.callbacks._current_year", return_value=2026)
+    @patch("f1_agent.cb_temporal._current_year", return_value=2026)
     def test_runtime_addendum_contains_dynamic_year(self, _mock_current_year):
         addendum = _runtime_temporal_addendum()
         self.assertIn("Current year: 2026", addendum)
         self.assertIn("Historical DB coverage: 1950-2024 only", addendum)
 
-    @patch("f1_agent.callbacks._current_year", return_value=2026)
+    @patch("f1_agent.cb_temporal._current_year", return_value=2026)
     def test_runtime_addendum_declares_last_season_completed(self, _mock):
         addendum = _runtime_temporal_addendum()
         self.assertIn("2025 F1 season is FULLY COMPLETED", addendum)
         self.assertIn("OVERRIDES YOUR TRAINING DATA", addendum)
 
-    @patch("f1_agent.callbacks._get_cache")
+    @patch("f1_agent.cb_semantic_cache._get_cache")
     def test_check_cache_bypasses_time_sensitive_queries(self, mock_get_cache):
         fake_cache = _FakeCache()
         mock_get_cache.return_value = fake_cache
@@ -109,7 +109,7 @@ class TemporalContextTests(unittest.TestCase):
         self.assertIsNone(result)
         self.assertEqual(fake_cache.get_calls, 0)
 
-    @patch("f1_agent.callbacks._get_cache")
+    @patch("f1_agent.cb_semantic_cache._get_cache")
     def test_check_cache_uses_cache_for_historical_queries(self, mock_get_cache):
         fake_cache = _FakeCache(answer="Verstappen")
         mock_get_cache.return_value = fake_cache
@@ -123,7 +123,7 @@ class TemporalContextTests(unittest.TestCase):
 
 
 class TemporalResolutionTests(unittest.TestCase):
-    @patch("f1_agent.callbacks._current_year", return_value=2026)
+    @patch("f1_agent.cb_temporal._current_year", return_value=2026)
     def test_resolves_last_season_pt(self, _mock):
         result = _resolve_temporal_references("quem foi o campeão da última temporada?")
         self.assertIsNotNone(result)
@@ -131,13 +131,13 @@ class TemporalResolutionTests(unittest.TestCase):
         self.assertIn("COMPLETED", result)
         self.assertIn("local database", result.lower())
 
-    @patch("f1_agent.callbacks._current_year", return_value=2026)
+    @patch("f1_agent.cb_temporal._current_year", return_value=2026)
     def test_resolves_last_season_en(self, _mock):
         result = _resolve_temporal_references("who won last season?")
         self.assertIsNotNone(result)
         self.assertIn("2025", result)
 
-    @patch("f1_agent.callbacks._current_year", return_value=2026)
+    @patch("f1_agent.cb_temporal._current_year", return_value=2026)
     def test_resolves_last_n_seasons(self, _mock):
         result = _resolve_temporal_references("últimos 3 campeões de pilotos")
         self.assertIsNotNone(result)
@@ -147,21 +147,21 @@ class TemporalResolutionTests(unittest.TestCase):
         self.assertIn("DB", result)
         self.assertIn("search_recent_results", result)
 
-    @patch("f1_agent.callbacks._current_year", return_value=2026)
+    @patch("f1_agent.cb_temporal._current_year", return_value=2026)
     def test_resolves_current_champion(self, _mock):
         result = _resolve_temporal_references("quem é o atual campeão?")
         self.assertIsNotNone(result)
         self.assertIn("2025", result)
         self.assertIn("champion", result.lower())
 
-    @patch("f1_agent.callbacks._current_year", return_value=2026)
+    @patch("f1_agent.cb_temporal._current_year", return_value=2026)
     def test_resolves_this_season(self, _mock):
         result = _resolve_temporal_references("como está esta temporada?")
         self.assertIsNotNone(result)
         self.assertIn("2026", result)
 
-    @patch("f1_agent.callbacks._current_date", return_value=date(2026, 6, 1))
-    @patch("f1_agent.callbacks._current_year", return_value=2026)
+    @patch("f1_agent.cb_temporal._current_date", return_value=date(2026, 6, 1))
+    @patch("f1_agent.cb_temporal._current_year", return_value=2026)
     def test_resolves_last_event_without_year_as_completed_edition(
         self, _mock_year, _mock_date
     ):
@@ -172,8 +172,8 @@ class TemporalResolutionTests(unittest.TestCase):
         self.assertIn("LAST COMPLETED edition", result)
         self.assertIn("event DATE and YEAR", result)
 
-    @patch("f1_agent.callbacks._current_date", return_value=date(2027, 1, 15))
-    @patch("f1_agent.callbacks._current_year", return_value=2027)
+    @patch("f1_agent.cb_temporal._current_date", return_value=date(2027, 1, 15))
+    @patch("f1_agent.cb_temporal._current_year", return_value=2027)
     def test_preseason_guard_for_current_standings(self, _mock_year, _mock_date):
         result = _resolve_temporal_references("Quem é o líder do campeonato?")
         self.assertIsNotNone(result)

@@ -8,6 +8,8 @@ import re
 import sqlite3
 from pathlib import Path
 
+from f1_agent.env_utils import get_package_dir
+
 DOCS_DIR = Path(__file__).parent.parent / "docs"
 
 
@@ -23,19 +25,12 @@ def _resolve_db_dir(base_dir: Path) -> Path:
     return base_dir
 
 
-def _get_package_dir(pkg: object) -> Path:
-    pkg_file = getattr(pkg, "__file__", None)
-    if pkg_file is not None:
-        return Path(pkg_file).parent
-    return Path(getattr(pkg, "__path__")[0])
-
-
 # When deployed, f1_data is an installed package in site-packages.
 # Locally, it's a sibling directory of f1_agent.
 try:
     import f1_data as _f1_data_pkg
 
-    _db_base_dir = _get_package_dir(_f1_data_pkg)
+    _db_base_dir = get_package_dir(_f1_data_pkg)
 except ImportError:
     _db_base_dir = Path(__file__).parent.parent / "f1_data"
 
