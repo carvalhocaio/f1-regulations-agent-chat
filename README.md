@@ -8,9 +8,10 @@ This repository is based on
 [f1-regulations-agent](https://github.com/carvalhocaio/f1-regulations-agent),
 the original CLI project.
 
-## Project Status (March 29, 2026)
+## Project Status (March 30, 2026)
 
 - The runtime is actively maintained around `f1_agent/`.
+- Modular architecture: callbacks split into `cb_*` submodules, tools into `tools_*` submodules (facades preserve backward compatibility).
 - Runs as a REST API via `adk api_server` (Google ADK).
 - Endpoints: `POST /run`, `POST /run_sse` (streaming), `WebSocket /run_live`, `GET /health`.
 
@@ -219,9 +220,9 @@ Core table row counts in the current repository artifact:
 ## CI
 
 - CI workflow: `.github/workflows/ci.yml`
-  - Trigger: pull requests to `main`
-  - Steps: `uv sync --frozen --extra dev`, `ruff check`,
-    `ruff format --check`, unit tests
+  - Triggers: push to `main` + pull requests to `main`
+  - **Lint job**: `ruff check` + `ruff format --check`
+  - **Test job** (matrix: Python 3.11, 3.12): module import smoke test + `unittest discover`
 
 ## Useful Commands
 

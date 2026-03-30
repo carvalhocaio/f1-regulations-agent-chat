@@ -118,23 +118,29 @@ These directories are gitignored and must be generated locally:
 
 ### Callback Pipeline
 
-Every request passes through a callback pipeline:
+Every request passes through a callback pipeline. Each callback lives in its own `cb_*` submodule (the `callbacks.py` facade re-exports all of them for backward compatibility):
 
 ```text
 Before model:
-  1. check_cache      — Return cached answer if similarity > 0.92
-  2. inject_runtime_temporal_context — Inject current UTC date/year per request
-  3. inject_corrections — Append user corrections from this session
-  4. inject_dynamic_examples — Retrieve real-error few-shots from Example Store
-  5. route_model      — Route to Flash/tuned (simple) or Pro (complex)
-  6. apply_throughput_request_type — Set `X-Vertex-AI-LLM-Request-Type` (`shared|dedicated`)
+  1. check_cache      — Return cached answer if similarity > 0.92        (cb_semantic_cache)
+  2. inject_runtime_temporal_context — Inject current UTC date/year       (cb_temporal)
+  3. inject_corrections — Append user corrections from this session       (cb_corrections)
+  4. inject_dynamic_examples — Retrieve real-error few-shots              (callbacks — inline)
+  5. route_model      — Route to Flash/tuned (simple) or Pro (complex)    (cb_model_routing)
+  6. apply_throughput_request_type — Set throughput route                  (cb_model_routing)
+  7. apply_grounding_policy — Attach grounding policy                     (cb_grounding)
+  8. apply_response_contract — Attach response schema                     (cb_response_validation)
+  9. preflight_token_check — Token budget guard                           (callbacks — inline)
 
 After model:
-  7. detect_corrections — Detect if the user corrected the agent (PT/EN)
-  8. store_cache      — Cache the answer (TTL: 30 days static, 24h time-sensitive)
+  10. log_context_cache_metrics — Context cache hit/miss logging          (callbacks — inline)
+  11. validate_structured_response — Schema validation                    (cb_response_validation)
+  12. validate_grounding_outcome — Grounding evidence check               (cb_grounding)
+  13. detect_corrections — Detect if the user corrected the agent         (cb_corrections)
+  14. store_cache      — Cache the answer (TTL: 30d static, 24h live)     (cb_semantic_cache)
 
 On error:
-  9. handle_rate_limit — User-friendly fallback after retry exhaustion (429/503)
+  15. handle_rate_limit — User-friendly fallback after retry exhaustion (429/503)
 
 Runtime resilience layer:
   - LLM runtime retries via Gemini `HttpRetryOptions` (exponential backoff + jitter)
@@ -189,7 +195,7 @@ Both adapters normalize results to the same `Document` shape used by tool consum
 
 ### Session Corrections
 
-`f1_agent/callbacks.py` detects when users correct the agent:
+`f1_agent/cb_corrections.py` detects when users correct the agent:
 
 - **Detection**: Regex patterns in Portuguese ("na verdade", "errou", "faltou") and English ("actually", "that's wrong", "you missed")
 - **Storage**: Corrections stored in `callback_context.state["f1_corrections"]` (per-session)
@@ -301,7 +307,8 @@ uv run python -m unittest tests.test_fine_tuning -v
 | `test_artifact_path_resolution.py` | 4 | Flat vs nested artifact layouts |
 | `test_temporal_context.py` | 20+ | Dynamic year injection, temporal resolution and cache bypass |
 | `test_sessions_contract.py` | 9 | Anonymous identity, TTL helpers, session service selection |
-| `test_rag_backend.py` | 3 | A4 backend routing and local fallback behavior |
+| `test_rag_backend.py` | 4 | A4 backend routing and local fallback behavior |
+| `test_season_info.py` | 4 | Current season info: completed/upcoming races, pre-season, API unavailable |
 
 ## Linting
 
@@ -438,9 +445,24 @@ For local development, keep `F1_TUNED_MODEL` unset so routing falls back to
 | `f1_agent/agent.py` | Agent definition — model, tools, callbacks, instruction loading |
 | `f1_agent/runner.py` | Runner setup with in-memory sessions |
 | `f1_agent/sessions.py` | Session identity normalization (`user_id`, `session_id`, `client_id`) and TTL helpers |
-| `f1_agent/callbacks.py` | Before/after-model callbacks: routing, cache, corrections |
+| **Callbacks** | |
+| `f1_agent/callbacks.py` | Facade — re-exports all callbacks from `cb_*` submodules |
+| `f1_agent/cb_helpers.py` | Shared callback utilities (`_extract_user_text`, `_current_year`, etc.) |
+| `f1_agent/cb_model_routing.py` | Model routing (`route_model`) and throughput request type |
+| `f1_agent/cb_temporal.py` | Temporal context injection and relative-time resolution |
+| `f1_agent/cb_semantic_cache.py` | Semantic cache callbacks (`check_cache`, `store_cache`) |
+| `f1_agent/cb_corrections.py` | Session corrections detection and injection |
+| `f1_agent/cb_grounding.py` | Grounding policy (`observe`/`enforce` mode) |
+| `f1_agent/cb_response_validation.py` | Structured response contracts and schema validation |
+| **Tools** | |
+| `f1_agent/tools.py` | Facade — re-exports all tools from `tools_*` submodules |
+| `f1_agent/tools_validation.py` | Shared tool input validation and error helpers |
+| `f1_agent/tools_rag.py` | `search_regulations` + RAG backend selection/fallback |
+| `f1_agent/tools_sql.py` | `query_f1_history`, `query_f1_history_template` |
+| `f1_agent/tools_jolpica.py` | `get_current_season_info`, `search_recent_results` |
+| **Infrastructure** | |
 | `f1_agent/cache.py` | Semantic answer cache (FAISS + SQLite with TTL) |
-| `f1_agent/tools.py` | Tool functions: `search_regulations`, `query_f1_history_template`, `query_f1_history`, `run_analytical_code` |
+| `f1_agent/env_utils.py` | Environment helpers (`env_bool`, `env_int`, `get_package_dir`) |
 | `f1_agent/rag.py` | RAG pipeline: PDF loading, article-aware chunking, FAISS + BM25 hybrid search |
 | `f1_agent/rag_vertex.py` | Vertex RAG adapter (`auto|local|vertex`) |
 | `f1_agent/db.py` | SQLite DB: schema builder (from Kaggle CSVs), read-only query execution |
