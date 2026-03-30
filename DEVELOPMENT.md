@@ -54,11 +54,15 @@ This generates:
 ### 5. Run the assistant locally
 
 ```bash
-make run
+# Headless REST API (recommended)
+make api
+
+# ADK web UI (development)
+make dev
 ```
 
-`make run` now prints runtime guidance and points to the test command,
-because the previous local web UI entrypoint was removed.
+`make api` starts a headless REST API at `http://localhost:8080` via `adk api_server`.
+`make dev` starts the ADK web UI at `http://localhost:8000`.
 
 ## Environment Variables
 
@@ -442,6 +446,5 @@ For local development, keep `F1_TUNED_MODEL` unset so routing falls back to
 | `f1_agent/db.py` | SQLite DB: schema builder (from Kaggle CSVs), read-only query execution |
 | `f1_agent/sql_templates.py` | 15 parameterized SQL templates for common F1 queries |
 | `f1_agent/prompts/system_instruction_static.txt` | Externalized system prompt with few-shot examples |
-| `deployment/deploy.py` | Vertex AI Agent Engine deploy/update script |
 | `deployment/rag_engine_ingest.py` | Creates/imports Vertex RAG corpus from GCS PDFs |
 | `build_index.py` | Generates `vector_store/` and `f1_data/` from source data in `docs/` |

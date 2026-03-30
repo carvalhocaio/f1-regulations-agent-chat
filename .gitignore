@@ -18,13 +18,7 @@ f1_data/
 f1_agent/.adk/
 f1_cache/
 
-# deploy
-deployment_metadata.json
-requirements-deploy.txt
-.terraform/
-*.tfstate
-*.tfstate.backup
-.terraform.lock.hcl
+# credentials
 sa-key.json
 
 # Docs

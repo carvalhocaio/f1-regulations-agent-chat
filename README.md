@@ -8,12 +8,11 @@ This repository is based on
 [f1-regulations-agent](https://github.com/carvalhocaio/f1-regulations-agent),
 the original CLI project.
 
-## Project Status (March 27, 2026)
+## Project Status (March 29, 2026)
 
-- The runtime is actively maintained around `f1_agent/` and deployment scripts.
-- The old local ADK web UI entrypoint was removed.
-- `make run` does not start a server; it prints local validation guidance.
-- Production target is Vertex AI Agent Engine.
+- The runtime is actively maintained around `f1_agent/`.
+- Runs as a REST API via `adk api_server` (Google ADK).
+- Endpoints: `POST /run`, `POST /run_sse` (streaming), `WebSocket /run_live`, `GET /health`.
 
 ## Core Runtime Capabilities
 
@@ -30,6 +29,10 @@ the original CLI project.
   - Restricted analytical sandbox with allowlisted task types:
     `summary_stats`, `what_if_points`, `distribution_bins`.
   - Feature-flagged (`F1_CODE_EXECUTION_ENABLED`).
+- `get_current_season_info`
+  - Current F1 season metadata.
+- `search_recent_results`
+  - Recent race results (web-sourced).
 
 ### Intelligence Layer
 
@@ -67,6 +70,8 @@ LLM + tools:
   - query_f1_history_template
   - query_f1_history
   - run_analytical_code (optional)
+  - get_current_season_info
+  - search_recent_results
     |
     v
 after_model callbacks:
@@ -77,48 +82,7 @@ after_model callbacks:
   - store_cache
 ```
 
-## Session Contract (No Login Clients)
-
-For persistent context across requests:
-
-- Send stable `client_id` from browser/device.
-- Optionally send `user_id`; otherwise backend derives `anon-<hash(client_id)>`.
-- On first request, omit `session_id`.
-- Store returned `session_id` and send it on subsequent calls.
-
-Sessions are local in-memory (`InMemorySessionService`).
-
-## WebSocket Streaming Contract
-
-Bridge endpoint:
-
-- `ws://<host>:8001/ws/chat`
-
-Client to server message types:
-
-- `{"type":"input","input":"...","request_id":"...","user_id":"...","session_id":"..."}`
-- `{"type":"abort"}`
-- `{"type":"ping"}`
-- `{"type":"close"}`
-
-Optional for structured JSON outputs on selected routes:
-
-- Include `"response_contract_id"` in `input` message.
-- Supported IDs:
-  - `sources_block_v1`
-  - `comparison_table_v1`
-
-Server event envelope:
-
-- `stream_protocol_version="v1"`
-- Event types:
-  - `turn_start`
-  - `delta`
-  - `tool_status`
-  - `turn_end`
-  - `error`
-
-## Quick Start (Local)
+## Quick Start
 
 ```bash
 # 1) Install uv
@@ -145,7 +109,6 @@ GOOGLE_API_KEY=your-gemini-api-key
 # F1_STRUCTURED_RESPONSE_ENABLED=true
 # F1_GROUNDING_POLICY_ENABLED=true
 # F1_GROUNDING_POLICY_MODE=observe
-# F1_VERTEX_LLM_REQUEST_TYPE=shared
 # F1_PREFLIGHT_TOKEN_CHECK_ENABLED=false
 EOF
 
@@ -156,13 +119,40 @@ EOF
 # 5) Build artifacts
 uv run build_index.py
 
-# 6) Validate locally
-uv run python -m unittest discover -s tests -p "test_*.py" -v
+# 6) Run as REST API
+make api
+# Server starts at http://localhost:8080
 ```
 
-`make run` is intentionally informational and prints the same guidance.
-
 For full local setup details, see [DEVELOPMENT.md](./DEVELOPMENT.md).
+
+## Running the API
+
+### Headless REST API (recommended)
+
+```bash
+make api
+# or directly:
+uv run adk api_server --host 127.0.0.1 --port 8080 --session_service_uri memory:// --auto_create_session .
+```
+
+### ADK Web UI (development)
+
+```bash
+make dev
+```
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/run` | POST | Synchronous agent execution, returns list of events |
+| `/run_sse` | POST | Streaming via Server-Sent Events |
+| `/run_live` | WebSocket | Live bidirectional streaming |
+| `/health` | GET | Health check |
+| `/list-apps` | GET | List available agents |
+
+Session CRUD endpoints are also available (create, get, list, delete).
 
 ## Configuration Reference (Most Used)
 
@@ -192,7 +182,6 @@ For full local setup details, see [DEVELOPMENT.md](./DEVELOPMENT.md).
   `F1_GROUNDING_TIME_SENSITIVE_SOURCE`.
 - `F1_PREFLIGHT_TOKEN_CHECK_ENABLED`, `F1_PREFLIGHT_TOKEN_THRESHOLD`,
   `F1_PREFLIGHT_TOKEN_HARD_LIMIT`.
-- `F1_VERTEX_LLM_REQUEST_TYPE` (`shared|dedicated`).
 
 ### Resilience and Cache
 
@@ -207,12 +196,6 @@ Gitignored runtime/generated directories:
 - `vector_store/`: FAISS artifacts from FIA PDFs (`index.faiss`, `index.pkl`)
 - `f1_data/`: SQLite database (`f1_history.db`)
 - `f1_cache/`: semantic cache artifacts created at runtime
-
-Current local DB state:
-
-- Core Kaggle schema tables: 14
-- Additional ingestion/support tables: `api_*` tables are present
-  (`api_entity_map`, `api_drivers_profile`, `api_race_fastestlaps`, etc.)
 
 Core table row counts in the current repository artifact:
 
@@ -233,24 +216,12 @@ Core table row counts in the current repository artifact:
 | `seasons` | 75 |
 | `status` | 139 |
 
-## Deployment and CI/CD (Current Workflows)
+## CI
 
 - CI workflow: `.github/workflows/ci.yml`
   - Trigger: pull requests to `main`
   - Steps: `uv sync --frozen --extra dev`, `ruff check`,
     `ruff format --check`, unit tests
-- Deploy workflow: `.github/workflows/deploy.yml`
-  - Trigger: push to `main`
-  - Steps:
-    1. Install deps
-    2. Download `vector_store/` and `f1_data/` artifacts from GCS
-    3. Generate `requirements-deploy.txt` with `uv export`
-    4. Deploy via `deployment/deploy.py`
-    5. Run smoke test via `deployment/smoke_agent_engine.py`
-    6. Upload `deployment_metadata.json` as workflow artifact
-
-For complete production setup, Terraform, secrets, and manual deploy paths,
-see [DEPLOY.md](./DEPLOY.md).
 
 ## Useful Commands
 
@@ -258,17 +229,11 @@ see [DEPLOY.md](./DEPLOY.md).
 # Unit tests
 uv run python -m unittest discover -s tests -p "test_*.py" -v
 
-# Deploy manually (example)
-uv run python deployment/deploy.py --help
+# REST API server
+make api
 
-# Smoke test deployed agent
-uv run python deployment/smoke_agent_engine.py --help
-
-# Optional bidi smoke test
-uv run python deployment/smoke_bidi_agent_engine.py --help
-
-# Optional local websocket bridge to a deployed agent
-uv run python deployment/websocket_bidi_server.py --help
+# ADK web UI
+make dev
 ```
 
 ## Limitations and Notes

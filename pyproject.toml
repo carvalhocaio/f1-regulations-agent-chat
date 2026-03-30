@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "google-adk>=1.27.0",
     "langchain",
     "langchain-google-genai",
     "langchain-community",
@@ -13,7 +14,6 @@ dependencies = [
     "python-decouple>=3.8",
     "pymupdf>=1.27.2.2",
     "rich>=14.3.3",
-    "google-cloud-secret-manager>=2.26.0",
     "google-cloud-aiplatform>=1.141.0",
     "google-cloud-monitoring>=2.28.0",
     "vertexai>=1.43.0",

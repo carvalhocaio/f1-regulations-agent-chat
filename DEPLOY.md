@@ -1,137 +1,58 @@
-# Deploy — Vertex AI Agent Engine (GCP)
+# Deploy — REST API (adk api_server)
 
-Complete guide to deploy the F1 agent on **Vertex AI Agent Engine** with infrastructure via **Terraform** and CI/CD via **GitHub Actions**.
+Guide to run the F1 agent as a REST API using `adk api_server`.
 
 ## Architecture
 
 ```
-GitHub Actions (CI/CD)
-  ├── PR → lint + tests
-  └── merge main → deploy production (with manual approval)
+adk api_server (FastAPI)
+  ├── POST /run         ← synchronous agent execution
+  ├── POST /run_sse     ← streaming via Server-Sent Events
+  ├── WS   /run_live    ← live bidirectional streaming
+  ├── GET  /health      ← health check
+  ├── GET  /list-apps   ← list available agents
+  └── Session CRUD      ← create, get, list, delete sessions
 
-GCP (f1-regulations-agent-chat)
-  ├── Vertex AI Agent Engine  ← Python agent runtime (f1_agent)
-  ├── Secret Manager          ← `google-api-key` (injected as `GEMINI_API_KEY`)
-  ├── Cloud Storage           ← staging bucket + artifacts
-  └── IAM                     ← dedicated service account
+Agent runtime (f1_agent/)
+  ├── Gemini 2.5 Pro (complex) + Flash (simple/tuned)
+  ├── Hybrid RAG (FAISS + BM25) over FIA 2026 regulations
+  ├── SQLite historical DB (1950-2024)
+  ├── Semantic cache (FAISS + SQLite)
+  └── Callback pipeline (routing, grounding, corrections, etc.)
 ```
 
 ## Prerequisites
 
-- [gcloud CLI](https://cloud.google.com/sdk/docs/install) installed and authenticated
-- [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.5
-- [uv](https://docs.astral.sh/uv/) for Python dependency management
-- GitHub repository with Actions enabled
-- Pre-generated data artifacts (`vector_store/` and `f1_data/`) — see [Section 2](#2-generate-data-artifacts)
+- [uv](https://docs.astral.sh/uv/) — Python package manager
+- Python 3.10+
+- A Gemini API key — get one at [Google AI Studio](https://aistudio.google.com/app/apikey)
 
----
+## 1) Install dependencies
 
-## 1) Initial GCP setup
-
-### 1.1) Environment variables
-
-```fish
-set -x PROJECT_ID "f1-regulations-agent-chat"
-set -x LOCATION "us-central1"
-set -x STAGING_BUCKET "gs://f1-agent-staging"
-set -x SA_NAME "f1-agent-engine"
-set -x SA_EMAIL "$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com"
-```
-
-### 1.2) Authentication and APIs
-
-```fish
-gcloud auth login
-gcloud auth application-default login
-gcloud config set project $PROJECT_ID
-
-# Enable required APIs
-gcloud services enable \
-  aiplatform.googleapis.com \
-  secretmanager.googleapis.com \
-  storage.googleapis.com \
-  iam.googleapis.com \
-  cloudresourcemanager.googleapis.com
-```
-
-### 1.3) Create Service Account
-
-```fish
-gcloud iam service-accounts create $SA_NAME \
-  --display-name "F1 Agent Engine SA" \
-  --project $PROJECT_ID
-
-# Required roles
-for role in roles/aiplatform.user roles/storage.admin roles/secretmanager.secretAccessor roles/logging.logWriter
-  gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member "serviceAccount:$SA_EMAIL" \
-    --role $role
-end
-```
-
-### 1.4) Create Staging Bucket
-
-```fish
-gcloud storage buckets create $STAGING_BUCKET \
-  --project $PROJECT_ID \
-  --location $LOCATION \
-  --uniform-bucket-level-access
-```
-
-### 1.5) Configure AI Platform Service Agent
-
-```fish
-gcloud beta services identity create \
-  --service aiplatform.googleapis.com \
-  --project $PROJECT_ID
-
-# Grant bucket access to the service agent
-set -l PROJECT_NUMBER (gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
-set -l SERVICE_AGENT "service-$PROJECT_NUMBER@gcp-sa-aiplatform.iam.gserviceaccount.com"
-
-gcloud storage buckets add-iam-policy-binding $STAGING_BUCKET \
-  --member "serviceAccount:$SERVICE_AGENT" \
-  --role roles/storage.objectAdmin
-```
-
-### 1.6) Store secrets in Secret Manager
-
-```fish
-# Gemini API key (required)
-echo -n "YOUR_GEMINI_API_KEY" | gcloud secrets create google-api-key \
-  --project $PROJECT_ID \
-  --replication-policy automatic \
-  --data-file=-
-
-# Fine-tuned model endpoint (optional — falls back to gemini-2.5-flash if not set)
-# Only needed after running a fine-tuning job (see DEVELOPMENT.md)
-echo -n "projects/PROJECT_NUMBER/locations/us-central1/endpoints/ENDPOINT_ID" | \
-  gcloud secrets create f1-tuned-model \
-  --project $PROJECT_ID \
-  --replication-policy automatic \
-  --data-file=-
-
-# Grant access to SA
-for secret in google-api-key f1-tuned-model
-  gcloud secrets add-iam-policy-binding $secret \
-    --project $PROJECT_ID \
-    --member "serviceAccount:$SA_EMAIL" \
-    --role roles/secretmanager.secretAccessor
-end
-```
-
-> If any key was ever committed or exposed in logs/docs, rotate it immediately in the provider console and update Secret Manager with the new value.
-
----
-
-## 2) Generate data artifacts
-
-The artifacts (`vector_store/` and `f1_data/`) are generated **once** locally and uploaded as `extra_packages` during deploy.
-
-```fish
-# Install dependencies
+```bash
 uv sync
+```
 
+## 2) Configure environment
+
+Create a `.env` file in the project root:
+
+```bash
+# Required
+GOOGLE_API_KEY=your-gemini-api-key
+
+# Optional
+# GEMINI_EMBEDDING_MODEL=models/gemini-embedding-2-preview
+# F1_RAG_BACKEND=auto
+```
+
+See [README.md](./README.md#configuration-reference-most-used) for the full configuration reference.
+
+## 3) Generate data artifacts
+
+The artifacts (`vector_store/` and `f1_data/`) are generated once locally.
+
+```bash
 # Ensure source data is in docs/
 # - FIA 2026 regulation PDFs (Sections A-F)
 # - "Formula 1 World Championship (1950 - 2024)" folder with Kaggle CSVs
@@ -144,387 +65,76 @@ ls vector_store/   # index.faiss, index.pkl
 ls f1_data/        # f1_history.db
 ```
 
-> **Important**: these directories must be present at deploy time. `.gitignore` excludes them from the repository, so they must be generated locally or downloaded from a bucket before deploying in CI.
+## 4) Start the REST API
 
----
-
-## 3) Terraform — Infrastructure
-
-### 3.1) Structure
-
-```
-deployment/
-└── terraform/
-    ├── main.tf          # provider, backend
-    ├── variables.tf     # input variables
-    ├── outputs.tf       # outputs (resource_name, etc.)
-    ├── iam.tf           # service account + roles
-    ├── storage.tf       # staging bucket
-    ├── secrets.tf       # Secret Manager
-    └── environments/
-        └── production.tfvars
+```bash
+make api
 ```
 
-### 3.2) Initialize Terraform
+Or directly:
 
-```fish
-# Create state bucket (once)
-gcloud storage buckets create gs://f1-agent-terraform-state \
-  --project $PROJECT_ID \
-  --location $LOCATION \
-  --uniform-bucket-level-access
-
-# Initialize and apply
-cd deployment/terraform
-terraform init
-terraform plan -var-file=environments/production.tfvars
-terraform apply -var-file=environments/production.tfvars
+```bash
+uv run adk api_server \
+  --host 127.0.0.1 \
+  --port 8080 \
+  --session_service_uri memory:// \
+  --auto_create_session \
+  .
 ```
 
----
+The server starts at `http://localhost:8080`.
 
-## 4) Deploy script
+## 5) Test the API
 
-The agent is deployed to Agent Engine via the Python SDK using `deployment/deploy.py`.
+### Health check
 
-### 4.1) Generate requirements-deploy.txt
-
-Agent Engine requires a flat `requirements.txt` (no `pyproject.toml` extras). Generate with:
-
-```fish
-uv export --frozen --no-hashes --no-dev --no-editable --no-annotate --no-header --no-emit-project -o requirements-deploy.txt
+```bash
+curl http://localhost:8080/health
 ```
 
-## 5) Prepare Vertex RAG corpus (optional but recommended)
+### Synchronous query
 
-Use this once (or when regulation PDFs change) to externalize regulations retrieval.
-
-> For new projects, RAG Engine in `us-central1`, `us-east1`, and `us-east4` may require allowlist access. If you hit that error, run corpus ingestion in `europe-west4` or `europe-west3`.
-
-```fish
-uv run python deployment/rag_engine_ingest.py \
-  --project-id $PROJECT_ID \
-  --location "europe-west4" \
-  --display-name "f1-regulations-rag" \
-  --paths "gs://<BUCKET>/regulations/" \
-  --chunk-size 1024 \
-  --chunk-overlap 200
+```bash
+curl -X POST http://localhost:8080/run \
+  -H "Content-Type: application/json" \
+  -d '{
+    "app_name": "f1_regulations_assistant",
+    "user_id": "test-user",
+    "new_message": {
+      "role": "user",
+      "parts": [{"text": "Who won the 2023 Formula 1 championship?"}]
+    }
+  }'
 ```
 
-Copy the returned corpus resource name:
+### Streaming (SSE)
 
-```text
-projects/<PROJECT_NUMBER>/locations/europe-west4/ragCorpora/<RAG_CORPUS_ID>
+```bash
+curl -N -X POST http://localhost:8080/run_sse \
+  -H "Content-Type: application/json" \
+  -d '{
+    "app_name": "f1_regulations_assistant",
+    "user_id": "test-user",
+    "new_message": {
+      "role": "user",
+      "parts": [{"text": "Explain DRS rules in the 2026 regulations"}]
+    }
+  }'
 ```
 
-## 5.1) Prepare Example Store for dynamic few-shot (A5, optional)
+## ADK Web UI (alternative)
 
-Use manual curation JSONL (v1) and sync with:
+For development with a visual interface:
 
-```fish
-uv run python deployment/example_store_sync.py \
-  --project-id $PROJECT_ID \
-  --location us-central1 \
-  --dataset data/example_store/manual_examples.v1.jsonl \
-  --example-store-name "projects/<PROJECT_NUMBER>/locations/us-central1/exampleStores/<EXAMPLE_STORE_ID>"
+```bash
+make dev
 ```
 
-If you need to create a store first, omit `--example-store-name` and pass a display name:
-
-```fish
-uv run python deployment/example_store_sync.py \
-  --project-id $PROJECT_ID \
-  --location us-central1 \
-  --dataset data/example_store/manual_examples.v1.jsonl \
-  --display-name "f1-real-errors"
-```
-
----
-
-## 6) Manual deploy (local)
-
-For direct deploy without CI/CD:
-
-```fish
-# 1. Ensure artifacts exist
-ls vector_store/ f1_data/
-
-# 2. Sync environment (installs f1_agent as editable package)
-uv sync
-
-# 3. Generate requirements
-uv export --frozen --no-hashes --no-dev --no-editable --no-annotate --no-header --no-emit-project -o requirements-deploy.txt
-
-# 4. Deploy
-uv run python deployment/deploy.py \
-  --project-id $PROJECT_ID \
-  --location $LOCATION \
-  --staging-bucket $STAGING_BUCKET \
-  --display-name "f1-agent" \
-  --service-account $SA_EMAIL \
-  --min-instances 2 \
-  --max-instances 6 \
-  --container-concurrency 18 \
-  --vertex-llm-request-type shared \
-  --rag-backend auto \
-  --rag-corpus "projects/<PROJECT_NUMBER>/locations/europe-west4/ragCorpora/<RAG_CORPUS_ID>" \
-  --rag-location "europe-west4" \
-  --example-store-enabled \
-  --example-store-name "projects/<PROJECT_NUMBER>/locations/us-central1/exampleStores/<EXAMPLE_STORE_ID>" \
-  --example-store-top-k 3 \
-  --example-store-min-score 0.65 \
-  --code-execution-enabled \
-  --code-execution-location "us-central1" \
-  --code-execution-agent-engine-name "projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>" \
-  --code-execution-sandbox-ttl-seconds 3600 \
-  --code-execution-max-rows 500
-```
-
-### 6.1) Smoke test
-
-```fish
-uv run python deployment/smoke_agent_engine.py \
-  --project-id $PROJECT_ID \
-  --location $LOCATION \
-  --resource-name $RESOURCE_NAME \
-  --display-name "f1-agent"
-```
-
-This smoke test now validates:
-- Agent Engine list/get
-
-Optional bidi smoke test (P7 scaffolding):
-
-```fish
-uv run python deployment/smoke_bidi_agent_engine.py \
-  --project-id $PROJECT_ID \
-  --location $LOCATION \
-  --resource-name $RESOURCE_NAME \
-  --user-id "smoke-bidi-user" \
-  --message "Give me a one-line summary of Formula 1."
-```
-
-This command prints protocolized events (`turn_start`, `delta`, `turn_end`, `error`).
-
-Optional local WebSocket bridge (P7):
-
-```fish
-uv run python deployment/websocket_bidi_server.py \
-  --project-id $PROJECT_ID \
-  --location $LOCATION \
-  --resource-name $RESOURCE_NAME \
-  --host 0.0.0.0 \
-  --port 8001
-```
-
-WebSocket endpoint: `ws://localhost:8001/ws/chat`
-
-### 6.2) Load test (for scaling calibration)
-
-Use this script to compare p95 before and after scaling changes:
-
-```fish
-uv run python deployment/load_test_agent_engine.py \
-  --project-id $PROJECT_ID \
-  --location $LOCATION \
-  --resource-name $RESOURCE_NAME \
-  --total-requests 150 \
-  --concurrency 30 \
-  --user-pool-size 30 \
-  --warmup-requests 15
-```
-
-Suggested quick loop:
-1. Run once with current config (baseline).
-2. Increase `--min-instances` to reduce cold starts.
-3. Adjust `--container-concurrency` to absorb bursts.
-4. Keep `--max-instances` bounded for cost control.
-
-### 6.2.1) Streaming mode benchmark (P7)
-
-Use this benchmark to compare TTFT and turn latency across modes:
-
-```fish
-uv run python deployment/benchmark_streaming_modes.py \
-  --project-id $PROJECT_ID \
-  --location $LOCATION \
-  --resource-name $RESOURCE_NAME \
-  --modes "query,async_stream,bidi" \
-  --total-requests 30 \
-  --concurrency 5
-```
-
-The output includes per-mode `ttft_p50/p95` and `turn_p50/p95`.
-
-### 6.3) Semantic cache lookup benchmark (P5)
-
-Use this local benchmark to validate that cache-hit lookup stays stable as
-cache size grows and remains significantly below a brute-force O(N) scan.
-
-```fish
-uv run python deployment/benchmark_semantic_cache.py \
-  --sizes 500,2000,5000,10000 \
-  --lookups 600 \
-  --warmup 120
-```
-
-The script emits JSON with p50/p95/p99 for ANN lookup and a synthetic
-`vector_scan_*` O(N) baseline over vectors only.
-Track `ann_p95_ms` across sizes to confirm sublinear behavior.
-
-### 6.4) Retrieval backend benchmark (P8)
-
-Before benchmarking `vector_search`, bootstrap a collection and ingest chunks:
-
-```fish
-uv run python deployment/vector_search_bootstrap.py \
-  --project-id $PROJECT_ID \
-  --location us-central1 \
-  --collection-id f1-regulations-benchmark \
-  --max-docs 400
-```
-
-Then set:
-
-```fish
-set -x F1_VECTOR_SEARCH_PARENT "projects/$PROJECT_ID/locations/us-central1/collections/f1-regulations-benchmark"
-set -x F1_VECTOR_SEARCH_FIELD "embedding"
-```
-
-Use this benchmark to compare retrieval backends (`local`, `vertex`,
-`vector_search`) over the same query dataset:
-
-```fish
-uv run python deployment/benchmark_retrieval_backends.py \
-  --queries-file data/benchmarks/retrieval_queries.jsonl \
-  --backends "local,vertex,vector_search" \
-  --top-k 5 \
-  --concurrency 10
-```
-
-Each JSONL row should follow:
-
-```json
-{"query":"What is Article 5.2 about?","expected_ids":["gs://docs/section_a.pdf|12|5.2|..."]}
-```
-
----
-
-## 7) CI/CD — GitHub Actions
-
-### 7.1) GitHub Secrets
-
-Configure under **Settings > Secrets and variables > Actions**:
-
-| Secret | Description |
-|--------|-------------|
-| `GCP_PROJECT_ID` | `f1-regulations-agent-chat` |
-| `GCP_SA_KEY` | Service Account JSON key (or use Workload Identity Federation) |
-| `GCP_REGION` | `us-central1` |
-| `GCP_STAGING_BUCKET` | `gs://f1-agent-staging` |
-| `GCP_SA_EMAIL` | `f1-agent-engine@f1-regulations-agent-chat.iam.gserviceaccount.com` |
-| `GCP_RAG_CORPUS` | `projects/<PROJECT_NUMBER>/locations/europe-west4/ragCorpora/<RAG_CORPUS_ID>` (optional) |
-| `GCP_RAG_REGION` | `europe-west4` (optional; defaults to `GCP_REGION`) |
-| `GCP_CODE_EXECUTION_ENABLED` | `true` or `false` (optional; enables A6 rollout in deploy workflow) |
-| `GCP_CODE_EXECUTION_AGENT_ENGINE_NAME` | `projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>` (optional, recommended when enabling A6) |
-| `GCP_AGENT_MIN_INSTANCES` | Optional; defaults to `2` in workflow |
-| `GCP_AGENT_MAX_INSTANCES` | Optional; defaults to `6` in workflow |
-| `GCP_AGENT_CONTAINER_CONCURRENCY` | Optional; defaults to `18` in workflow |
-
-> **Recommended**: Use [Workload Identity Federation](https://github.com/google-github-actions/auth#workload-identity-federation) instead of SA key for keyless authentication.
-
-### 7.2) Workflows
-
-- **`.github/workflows/ci.yml`** — Lint and format check on PRs
-- **`.github/workflows/deploy.yml`** — Release pipeline on merge to `main`:
-  1. Deploys `f1-agent-candidate`
-  2. Runs Gen AI Evaluation on `data/evals/agent_regression.v1.jsonl`
-  3. Applies gate from `config/eval_thresholds.json` (absolute minimum + regression delta vs baseline)
-  4. Promotes to `f1-agent` production only if gate passes (still requires environment approval)
-
-### 7.3) Configure GitHub Environment
-
-Under **Settings > Environments**, create:
-
-- **production** — with **Required reviewers** (manual approval before deploy)
-
-### 7.4) Evaluation artifacts and baseline
-
-- Release reports are stored at `gs://<PROJECT_ID>-artifacts/eval/releases/<GIT_SHA>/eval_report.json`.
-- Approved baseline is stored at `gs://<PROJECT_ID>-artifacts/eval/baseline/eval_report.json`.
-- On first run (no baseline yet), the gate enforces only absolute minimum thresholds.
-
----
-
-## 8) Upload artifacts to bucket
-
-Since `vector_store/` and `f1_data/` are generated once and excluded from git, upload them to the artifacts bucket:
-
-```fish
-# Upload (run once, or when data changes)
-gcloud storage cp -r vector_store/* "gs://f1-regulations-agent-chat-artifacts/vector_store/"
-gcloud storage cp -r f1_data/* "gs://f1-regulations-agent-chat-artifacts/f1_data/"
-```
-
-CI automatically downloads these artifacts before deploy (see "Download data artifacts" step in the workflow).
-
----
-
-## 9) Update the agent
-
-To update an already deployed agent without creating a new instance:
-
-```fish
-# deploy.py automatically detects if the agent exists (by display_name)
-# and runs update instead of create.
-uv run python deployment/deploy.py \
-  --project-id $PROJECT_ID \
-  --location $LOCATION \
-  --staging-bucket $STAGING_BUCKET \
-  --display-name "f1-agent" \
-  --service-account $SA_EMAIL \
-  --min-instances 2 \
-  --max-instances 6 \
-  --container-concurrency 18 \
-  --vertex-llm-request-type shared \
-  --rag-backend auto \
-  --rag-corpus "projects/<PROJECT_NUMBER>/locations/europe-west4/ragCorpora/<RAG_CORPUS_ID>" \
-  --rag-location "europe-west4"
-```
-
----
-
-## 10) Delete agent
-
-```fish
-set -x RESOURCE_NAME "projects/.../locations/us-central1/reasoningEngines/..."
-
-python -c '
-import os
-import vertexai
-
-client = vertexai.Client(
-    project=os.environ["PROJECT_ID"],
-    location=os.environ["LOCATION"],
-)
-client.agent_engines.delete(name=os.environ["RESOURCE_NAME"])
-print("Deleted:", os.environ["RESOURCE_NAME"])
-'
-```
-
----
+This starts the ADK web UI at `http://localhost:8000`.
 
 ## Notes
 
-- **Reserved variables**: Never set `GOOGLE_CLOUD_PROJECT` or `GOOGLE_APPLICATION_CREDENTIALS` as env vars in the deploy. Use `vertexai.Client(...)` with explicit `project` and `location`.
-- **Region**: Agent Engine must use the same region as the staging bucket.
-- **LLM model version**: Production uses `gemini-2.5-pro` for complex queries and the fine-tuned Flash endpoint (`F1_TUNED_MODEL`) for simple queries. Model routing is automatic via callbacks.
-- **RAG backend**: `F1_RAG_BACKEND=auto` is the recommended default. It tries `vector_search`, then `vertex`, then local FAISS+BM25 fallback.
-- **Vector Search backend**: for `F1_RAG_BACKEND=vector_search`, set `F1_VECTOR_SEARCH_PARENT`; optional knobs: `F1_VECTOR_SEARCH_FIELD`, `F1_VECTOR_SEARCH_TOP_K`, `F1_VECTOR_SEARCH_OUTPUT_FIELDS`.
-- **RAG location**: `F1_RAG_LOCATION` can be different from Agent Engine region; use `europe-west4` (or `europe-west3`) when `us-central1` is allowlist-restricted.
-- **Example Store**: only enable dynamic few-shot when `F1_EXAMPLE_STORE_NAME` points to a valid store. Recommended region for Example Store is `us-central1`.
-- **Code Execution (A6)**: keep disabled by default and enable only with a clear safety policy. Current implementation is restricted to allowlisted analytical templates and `us-central1`.
-- **Fine-tuned model**: The `f1-tuned-model` secret is optional. If not set, simple queries fall back to `gemini-2.5-flash`. See [DEVELOPMENT.md](./DEVELOPMENT.md#fine-tuning-production-only) for details.
-- **Scaling**: tune `min_instances`, `max_instances`, and `container_concurrency` with load tests.
-- **Data artifacts**: If PDFs or CSVs are updated, re-run `build_index.py` locally and upload the new artifacts to the bucket.
-- **Telemetry**: The deploy already enables traces and logs via OpenTelemetry. Access them in the Vertex AI console under **Dashboard** and **Traces**.
+- **Sessions**: `--session_service_uri memory://` uses in-memory sessions (lost on restart). For persistence, ADK supports other backends.
+- **Model routing**: Production uses `gemini-2.5-pro` for complex queries and Flash for simple queries. Routing is automatic via callbacks.
+- **RAG backend**: `F1_RAG_BACKEND=auto` is the recommended default. It tries Vector Search, then Vertex RAG, then local FAISS+BM25 fallback.
+- **Data artifacts**: If PDFs or CSVs are updated, re-run `build_index.py` locally.
