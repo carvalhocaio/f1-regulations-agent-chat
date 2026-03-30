@@ -323,9 +323,7 @@ def build_database() -> None:
 
                     placeholders = ", ".join("?" for _ in columns)
                     col_names = ", ".join(columns)
-                    sql = (
-                        f"INSERT INTO {table_name} ({col_names}) VALUES ({placeholders})"
-                    )
+                    sql = f"INSERT INTO {table_name} ({col_names}) VALUES ({placeholders})"
 
                     batch: list[tuple[str | None, ...]] = []
                     for row in reader:
