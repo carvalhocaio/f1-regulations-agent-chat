@@ -41,27 +41,5 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
-      - name: Verify module imports
-        run: |
-          uv run python -c "
-          from f1_agent.callbacks import (
-              route_model, check_cache, store_cache,
-              inject_runtime_temporal_context, inject_corrections,
-              inject_dynamic_examples, preflight_token_check,
-              log_context_cache_metrics, detect_corrections,
-              apply_grounding_policy, validate_grounding_outcome,
-              apply_response_contract, validate_structured_response,
-              apply_throughput_request_type,
-          )
-          from f1_agent.tools import (
-              search_regulations, query_f1_history,
-              query_f1_history_template, get_current_season_info,
-              search_recent_results,
-          )
-          from f1_agent.agent import root_agent, build_app
-          from f1_agent.runner import build_runner
-          print('All module imports OK')
-          "
-
       - name: Unit tests
         run: uv run python -m unittest discover -s tests -p "test_*.py" -v

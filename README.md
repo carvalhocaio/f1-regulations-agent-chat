@@ -222,7 +222,7 @@ Core table row counts in the current repository artifact:
 - CI workflow: `.github/workflows/ci.yml`
   - Triggers: push to `main` + pull requests to `main`
   - **Lint job**: `ruff check` + `ruff format --check`
-  - **Test job** (matrix: Python 3.11, 3.12): module import smoke test + `unittest discover`
+  - **Test job** (Python 3.11): `unittest discover`
 
 ## Useful Commands
 

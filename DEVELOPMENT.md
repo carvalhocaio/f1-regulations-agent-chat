@@ -212,28 +212,7 @@ Vertex AI Example Store and inject compact guidance before model execution:
 - **Selection**: top-k with `F1_EXAMPLE_STORE_TOP_K` + score filter via `F1_EXAMPLE_STORE_MIN_SCORE`
 - **Safety**: failures are non-blocking; the request continues without dynamic examples
 
-Manual curation workflow (v1):
-
-1. Curate examples into `data/example_store/manual_examples.v1.jsonl`
-2. Dry-run validation:
-
-```bash
-uv run python deployment/example_store_sync.py \
-  --project-id <PROJECT_ID> \
-  --location us-central1 \
-  --dataset data/example_store/manual_examples.v1.jsonl \
-  --dry-run
-```
-
-3. Sync to Example Store:
-
-```bash
-uv run python deployment/example_store_sync.py \
-  --project-id <PROJECT_ID> \
-  --location us-central1 \
-  --dataset data/example_store/manual_examples.v1.jsonl \
-  --example-store-name projects/<PROJECT_NUMBER>/locations/us-central1/exampleStores/<EXAMPLE_STORE_ID>
-```
+Curated dataset sync automation is out of scope in this local-only repository.
 
 ### Restricted Code Execution (A6)
 
@@ -366,44 +345,11 @@ echo -n "projects/<PROJECT_NUMBER>/locations/us-central1/endpoints/<ENDPOINT_ID>
 # F1_TUNED_MODEL=projects/<PROJECT_NUMBER>/locations/us-central1/endpoints/<ENDPOINT_ID>
 ```
 
-The deploy script (`deployment/deploy.py`) automatically reads the `f1-tuned-model` secret from Secret Manager and injects it as the `F1_TUNED_MODEL` environment variable in the Agent Engine runtime.
+Deployment wiring is out of scope in this local-only repository.
 
 ### Continuous tuning loop (live dataset)
 
-Q5 introduces a live-dataset path to continuously improve tool use and response format quality.
-
-1. Curate failures from eval/runtime signals into a raw JSONL file (see schema in `data/fine_tuning_live/README.md`).
-2. (Optional automation) collect raw failures from eval artifacts:
-
-```bash
-uv run python deployment/collect_live_failures.py \
-  --eval-dataset-file data/evals/agent_regression.v1.jsonl \
-  --eval-report-file eval_report.json \
-  --output-file data/fine_tuning_live/live_failures.raw.v1.jsonl
-```
-
-3. Build a versioned, redacted live dataset:
-
-```bash
-uv run python deployment/build_live_fine_tuning_dataset.py \
-  --failures-file data/fine_tuning_live/live_failures.raw.v1.jsonl \
-  --output-dir data/fine_tuning_live \
-  --version v1
-```
-
-4. Upload generated train/test files to GCS and launch tuning:
-
-```bash
-gsutil cp data/fine_tuning_live/dataset.train.v1.jsonl gs://<BUCKET>/fine_tuning/dataset.train.v1.jsonl
-gsutil cp data/fine_tuning_live/dataset.test.v1.jsonl gs://<BUCKET>/fine_tuning/dataset.test.v1.jsonl
-
-uv run python -m f1_agent.fine_tuning.tune \
-  --project <PROJECT_ID> \
-  --training-data gs://<BUCKET>/fine_tuning/dataset.train.v1.jsonl \
-  --validation-data gs://<BUCKET>/fine_tuning/dataset.test.v1.jsonl
-```
-
-Redaction is enabled by default in the builder and should remain enabled for regular operation.
+Live dataset collection/build automation is out of scope in this local-only repository.
 
 ### Fine-tuning files
 
@@ -467,5 +413,4 @@ For local development, keep `F1_TUNED_MODEL` unset so routing falls back to
 | `f1_agent/db.py` | SQLite DB: schema builder (from Kaggle CSVs), read-only query execution |
 | `f1_agent/sql_templates.py` | 15 parameterized SQL templates for common F1 queries |
 | `f1_agent/prompts/system_instruction_static.txt` | Externalized system prompt with few-shot examples |
-| `deployment/rag_engine_ingest.py` | Creates/imports Vertex RAG corpus from GCS PDFs |
 | `build_index.py` | Generates `vector_store/` and `f1_data/` from source data in `docs/` |
