@@ -1,6 +1,6 @@
 # Development Guide
 
-Complete guide for setting up the local development environment, understanding the architecture, running tests, and working with fine-tuning.
+Complete guide for setting up the local development environment, understanding the architecture, and running tests.
 
 ## Prerequisites
 
@@ -70,7 +70,6 @@ make dev
 |----------|----------|---------|-------------|
 | `GOOGLE_API_KEY` | Yes | — | Gemini API key for LLM and embeddings |
 | `GEMINI_EMBEDDING_MODEL` | No | `models/gemini-embedding-2-preview` | Embedding model for RAG and cache |
-| `F1_TUNED_MODEL` | No | `gemini-2.5-flash` | Fine-tuned model endpoint (**production only** — see [Fine-Tuning](#fine-tuning-production-only)) |
 | `F1_RAG_BACKEND` | No | `auto` | Regulations retrieval backend: `auto`, `local`, `vertex`, or `vector_search` |
 | `F1_RAG_CORPUS` | No | — | Vertex RAG corpus resource name (required when Vertex retrieval is used) |
 | `F1_RAG_PROJECT_ID` | No | — | Explicit project for Vertex RAG client initialization |
@@ -126,7 +125,7 @@ Before model:
   2. inject_runtime_temporal_context — Inject current UTC date/year       (cb_temporal)
   3. inject_corrections — Append user corrections from this session       (cb_corrections)
   4. inject_dynamic_examples — Retrieve real-error few-shots              (callbacks — inline)
-  5. route_model      — Route to Flash/tuned (simple) or Pro (complex)    (cb_model_routing)
+  5. route_model      — Route to Flash (simple) or Pro (complex)           (cb_model_routing)
   6. apply_throughput_request_type — Set throughput route                  (cb_model_routing)
   7. apply_grounding_policy — Attach grounding policy                     (cb_grounding)
   8. apply_response_contract — Attach response schema                     (cb_response_validation)
@@ -151,7 +150,7 @@ Runtime resilience layer:
 
 The `route_model` callback classifies questions using regex heuristics:
 
-- **Simple** (~70% of queries) — factual lookups, single-tool questions → `gemini-2.5-flash` (or fine-tuned endpoint in production)
+- **Simple** (~70% of queries) — factual lookups, single-tool questions → `gemini-2.5-flash`
 - **Complex** (~30%) — comparisons, temporal reasoning, multi-tool synthesis, open-ended questions → `gemini-2.5-pro`
 
 Classification patterns for complex queries: comparisons (`vs`, `compare`, `diferença`), temporal ranges (`last N`, `últimos N`), regulation+history mix, open-ended (`why`, `how`, `por que`).
@@ -268,7 +267,6 @@ uv run python -m unittest discover tests -v
 
 # Run a specific test module
 uv run python -m unittest tests.test_model_routing -v
-uv run python -m unittest tests.test_fine_tuning -v
 ```
 
 ### Test Modules
@@ -280,7 +278,6 @@ uv run python -m unittest tests.test_fine_tuning -v
 | `test_semantic_cache.py` | 6 | Put/get, TTL, hit counts, clearing |
 | `test_corrections.py` | 11 | Detection (PT/EN), storage, injection, cap |
 | `test_hybrid_search.py` | 8 | Tokenization, article extraction |
-| `test_fine_tuning.py` | 13 | Schema building, JSONL format, dataset generation |
 | `test_agent_tool_contract.py` | 4 | Tool registration, prompt loading |
 | `test_model_error_callback.py` | 4 | Rate limit handling (429/503) |
 | `test_artifact_path_resolution.py` | 4 | Flat vs nested artifact layouts |
@@ -303,62 +300,6 @@ uv run ruff check --fix .
 uv run ruff format .
 ```
 
-## Fine-Tuning (Production Only)
-
-> **Fine-tuning is NOT required for local development.** The fine-tuned model is a Vertex AI endpoint used only in production. Locally, the model routing callback falls back to `gemini-2.5-flash` when `F1_TUNED_MODEL` is not set.
-
-### How it works
-
-The fine-tuning pipeline generates Q&A training pairs from the real F1 SQLite database, formats them as Vertex AI SFT JSONL, and launches a supervised fine-tuning job on `gemini-2.5-flash`.
-
-The tuned model learns F1-specific patterns (tool selection, answer formatting, bilingual responses) and replaces the base Flash model in the routing callback for production deployments.
-
-### Dataset format
-
-Each training example is a text-only JSONL line with `{"contents": [user, model]}`:
-- **User message**: Includes the system instruction as `[System: ...]` prefix
-- **Model answer**: Includes `[Tool Use]` / `[Tool Results]` text representation of function calls, followed by the formatted answer
-
-This format is required because `gemini-2.5-flash` SFT does not support `functionCall`/`functionResponse` modalities.
-
-### Steps (for maintainers)
-
-```bash
-# 1. Generate the dataset (bilingual Q&A pairs from the real database)
-uv run python -m f1_agent.fine_tuning.generate_dataset
-
-# 2. Upload training and test splits to GCS
-gsutil cp f1_agent/fine_tuning/dataset.train.jsonl gs://<BUCKET>/fine_tuning/dataset.train.jsonl
-gsutil cp f1_agent/fine_tuning/dataset.test.jsonl gs://<BUCKET>/fine_tuning/dataset.test.jsonl
-
-# 3. Launch the fine-tuning job
-uv run python -m f1_agent.fine_tuning.tune \
-    --project <PROJECT_ID> \
-    --training-data gs://<BUCKET>/fine_tuning/dataset.train.jsonl \
-    --validation-data gs://<BUCKET>/fine_tuning/dataset.test.jsonl
-
-# 4. Once the job completes, store the endpoint in Secret Manager
-echo -n "projects/<PROJECT_NUMBER>/locations/us-central1/endpoints/<ENDPOINT_ID>" | \
-    gcloud secrets create f1-tuned-model --project <PROJECT_ID> --data-file=-
-
-# 5. For local testing with the tuned model, add to .env:
-# F1_TUNED_MODEL=projects/<PROJECT_NUMBER>/locations/us-central1/endpoints/<ENDPOINT_ID>
-```
-
-Deployment wiring is out of scope in this local-only repository.
-
-### Continuous tuning loop (live dataset)
-
-Live dataset collection/build automation is out of scope in this local-only repository.
-
-### Fine-tuning files
-
-| File | Purpose |
-|------|---------|
-| `f1_agent/fine_tuning/schema.py` | TOOL_DECLARATIONS, `build_example()`, JSONL format helpers |
-| `f1_agent/fine_tuning/generate_dataset.py` | Dataset generators producing bilingual Q&A pairs from real database |
-| `f1_agent/fine_tuning/tune.py` | CLI to launch Vertex AI SFT job (`vertexai.tuning.sft.train`) |
-
 ## Troubleshooting
 
 ### `404 NOT_FOUND` for embeddings
@@ -374,14 +315,6 @@ GEMINI_EMBEDDING_MODEL=models/gemini-embedding-2-preview
 ```
 
 The cache and RAG embedding paths both follow `GEMINI_EMBEDDING_MODEL`.
-
-### `404 Not Found` when asking simple questions
-
-If simple prompts fail and `.env` has `F1_TUNED_MODEL`, the local app may be trying
-to call a production Vertex endpoint that is unavailable for your credentials/project.
-
-For local development, keep `F1_TUNED_MODEL` unset so routing falls back to
-`gemini-2.5-flash`.
 
 ## Key Modules Reference
 

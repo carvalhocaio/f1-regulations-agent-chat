@@ -37,7 +37,7 @@ the original CLI project.
 
 ### Intelligence Layer
 
-- Model routing (`route_model`): simple routes to Flash/tuned Flash, complex stays on Pro.
+- Model routing (`route_model`): simple routes to Flash, complex stays on Pro.
 - Semantic cache (`check_cache` / `store_cache`) with similarity-based retrieval.
 - Runtime temporal context injection to prevent stale year assumptions.
 - Relative-time resolution and local DB coverage enforcement (1950-2024).
@@ -161,7 +161,6 @@ Session CRUD endpoints are also available (create, get, list, delete).
 
 - `GOOGLE_API_KEY` / `GEMINI_API_KEY`: API key for Gemini.
 - `GEMINI_EMBEDDING_MODEL`: embedding model used by RAG/cache.
-- `F1_TUNED_MODEL`: optional tuned Flash endpoint for routing.
 
 ### Retrieval
 
