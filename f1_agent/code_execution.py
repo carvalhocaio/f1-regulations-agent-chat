@@ -15,8 +15,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import vertexai
-from google import genai
 from google.api_core import exceptions as gcp_exceptions
+from google.auth import exceptions as auth_exceptions
 
 from f1_agent.env_utils import env_bool, env_int
 from f1_agent.resilience import CircuitBreakerOpenError, run_with_retry
@@ -284,11 +284,14 @@ def _execute_in_sandbox(
     payload: dict[str, Any],
     code: str,
 ) -> dict[str, Any]:
-    client = vertexai.Client(project=settings.project_id, location=settings.location)
+    client = None
     sandbox_name = None
 
     try:
-        create_config = genai.types.CreateAgentEngineSandboxConfig(
+        client = vertexai.Client(
+            project=settings.project_id, location=settings.location
+        )
+        create_config = vertexai.types.CreateAgentEngineSandboxConfig(
             display_name=f"f1-analytics-{uuid.uuid4().hex[:8]}",
             ttl=f"{settings.sandbox_ttl_seconds}s",
         )
@@ -334,6 +337,8 @@ def _execute_in_sandbox(
         gcp_exceptions.InternalServerError,
         gcp_exceptions.ServiceUnavailable,
         gcp_exceptions.DeadlineExceeded,
+        gcp_exceptions.GoogleAPICallError,
+        auth_exceptions.DefaultCredentialsError,
         CircuitBreakerOpenError,
     ) as exc:
         logger.warning("Code Execution sandbox failed", exc_info=True)
@@ -342,8 +347,15 @@ def _execute_in_sandbox(
             "message": f"Code Execution failed: {exc}",
             "task_type": task_type,
         }
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Unexpected Code Execution sandbox failure")
+        return {
+            "status": "error",
+            "message": f"Code Execution failed unexpectedly: {exc}",
+            "task_type": task_type,
+        }
     finally:
-        if sandbox_name:
+        if client is not None and sandbox_name:
             try:
                 client.agent_engines.sandboxes.delete(name=sandbox_name)
             except Exception:
@@ -375,6 +387,46 @@ def _extract_sandbox_name(operation: Any) -> str | None:
 
 
 def _extract_execution_output(response: Any) -> dict[str, str]:
+    stdout_chunks: list[str] = []
+    stderr_chunks: list[str] = []
+
+    # Current Vertex SDK response shape: ExecuteSandboxEnvironmentResponse(outputs=[Chunk...])
+    outputs = _field(response, "outputs")
+    if isinstance(outputs, list):
+        for chunk in outputs:
+            text = _chunk_to_text(chunk)
+            if not text:
+                continue
+
+            file_name = _chunk_file_name(chunk).lower()
+            if "stderr" in file_name:
+                stderr_chunks.append(text)
+            elif "stdout" in file_name:
+                stdout_chunks.append(text)
+            else:
+                parsed = _parse_json_if_object(text)
+                if isinstance(parsed, dict):
+                    chunk_stdout = parsed.get("stdout")
+                    chunk_stderr = parsed.get("stderr")
+                    if isinstance(chunk_stdout, str) and chunk_stdout:
+                        stdout_chunks.append(chunk_stdout)
+                    elif chunk_stdout is not None:
+                        stdout_chunks.append(str(chunk_stdout))
+                    if isinstance(chunk_stderr, str) and chunk_stderr:
+                        stderr_chunks.append(chunk_stderr)
+                    elif chunk_stderr is not None:
+                        stderr_chunks.append(str(chunk_stderr))
+                    if chunk_stdout is not None or chunk_stderr is not None:
+                        continue
+                stdout_chunks.append(text)
+
+    if stdout_chunks or stderr_chunks:
+        return {
+            "stdout": "\n".join(part for part in stdout_chunks if part).strip(),
+            "stderr": "\n".join(part for part in stderr_chunks if part).strip(),
+        }
+
+    # Backward-compatible fallback for dict/legacy response shapes.
     stdout = _field(response, "stdout")
     stderr = _field(response, "stderr")
 
@@ -393,6 +445,46 @@ def _extract_execution_output(response: Any) -> dict[str, str]:
         "stdout": str(stdout or ""),
         "stderr": str(stderr or ""),
     }
+
+
+def _chunk_to_text(chunk: Any) -> str:
+    data = _field(chunk, "data")
+    if data is None:
+        return ""
+    if isinstance(data, bytes):
+        return data.decode("utf-8", errors="replace")
+    if isinstance(data, str):
+        return data
+    return str(data)
+
+
+def _chunk_file_name(chunk: Any) -> str:
+    metadata = _field(chunk, "metadata")
+    attributes = _field(metadata, "attributes")
+    if not isinstance(attributes, dict):
+        return ""
+
+    value = attributes.get("file_name")
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _parse_json_if_object(text: str) -> dict[str, Any] | None:
+    candidate = (text or "").strip()
+    if not candidate.startswith("{") or not candidate.endswith("}"):
+        return None
+    try:
+        data = json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(data, dict):
+        return data
+    return None
 
 
 def _field(value: Any, *keys: str) -> Any:
