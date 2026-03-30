@@ -90,9 +90,9 @@ def preflight_token_check(callback_context, llm_request):
 
     Runs as the **last** before-model callback, after all context injection
     and model routing.  Calls the Gemini CountTokens API to verify the
-    request fits within the configured threshold.  If it exceeds the limit,
-    progressively removes injected context blocks (examples → memories →
-    corrections → temporal) until the request is within budget.
+    request fits within the configured threshold. If it exceeds the limit,
+    progressively removes injected context blocks (examples → corrections →
+    temporal) until the request is within budget.
 
     Gracefully degrades: if CountTokens fails, logs a warning and proceeds
     without truncation.
