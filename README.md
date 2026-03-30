@@ -119,6 +119,7 @@ EOF
 
 # 5) Build artifacts
 uv run build_index.py
+# Exit codes: 0 = both artifacts built, 1 = partial/total failure
 
 # 6) Run as REST API
 make api

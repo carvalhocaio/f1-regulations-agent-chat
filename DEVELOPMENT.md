@@ -47,6 +47,10 @@ GOOGLE_API_KEY=your-gemini-api-key
 uv run build_index.py
 ```
 
+Exit codes:
+- `0` — both artifacts were built successfully (`vector_store/` and `f1_data/`)
+- `1` — partial or total failure (check console output for which step failed)
+
 This generates:
 - `vector_store/index.faiss` + `vector_store/index.pkl` — FAISS vector index from FIA regulation PDFs
 - `f1_data/f1_history.db` — SQLite database from Kaggle CSVs (14 tables, 711K+ rows)
