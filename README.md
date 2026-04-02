@@ -8,7 +8,7 @@ This repository is based on
 [f1-regulations-agent](https://github.com/carvalhocaio/f1-regulations-agent),
 the original CLI project.
 
-## Project Status (March 30, 2026)
+## Project Status (April 2, 2026)
 
 - The runtime is actively maintained around `f1_agent/`.
 - Modular architecture: callbacks split into `cb_*` submodules, tools into `tools_*` submodules (facades preserve backward compatibility).
@@ -30,10 +30,12 @@ the original CLI project.
   - Current F1 season metadata.
 - `search_recent_results`
   - Recent race results (web-sourced).
+- `GoogleSearchTool` (optional)
+  - Web search via Google Search. Enabled by default (`F1_GOOGLE_SEARCH_ENABLED=true`).
 
 ### Intelligence Layer
 
-- Model routing (`route_model`): simple routes to Flash, complex stays on Pro.
+- Model routing (`route_model`): simple routes to Flash, complex stays on Pro. Configurable default model via `F1_DEFAULT_MODEL`.
 - Semantic cache (`check_cache` / `store_cache`) with similarity-based retrieval.
 - Runtime temporal context injection to prevent stale year assumptions.
 - Relative-time resolution and local DB coverage enforcement (1950-2024).
@@ -42,6 +44,7 @@ the original CLI project.
 - Grounding policy callback (`observe` or `enforce` mode).
 - Token preflight check with CountTokens API and progressive context truncation.
 - Resilience layer: retries + exponential backoff/jitter + circuit breaker.
+- Pro quota exhaustion detection with automatic Flash fallback.
 
 ## Request Flow
 
@@ -53,12 +56,10 @@ before_model callbacks:
   1) check_cache
   2) inject_runtime_temporal_context
   3) inject_corrections
-  4) inject_dynamic_examples
-  5) route_model
-  6) apply_throughput_request_type
-  7) apply_grounding_policy
-  8) apply_response_contract
-  9) preflight_token_check
+  4) route_model
+  5) apply_grounding_policy
+  6) apply_response_contract
+  7) preflight_token_check
     |
     v
 LLM + tools:
@@ -67,6 +68,7 @@ LLM + tools:
   - query_f1_history
   - get_current_season_info
   - search_recent_results
+  - GoogleSearchTool (optional)
     |
     v
 after_model callbacks:
@@ -75,6 +77,10 @@ after_model callbacks:
   - validate_grounding_outcome
   - detect_corrections
   - store_cache
+    |
+    v
+on_model_error:
+  - handle_rate_limit (429/503 → user-friendly fallback)
 ```
 
 ## Quick Start
@@ -154,10 +160,12 @@ Session CRUD endpoints are also available (create, get, list, delete).
 
 - `GOOGLE_API_KEY` / `GEMINI_API_KEY`: API key for Gemini.
 - `GEMINI_EMBEDDING_MODEL`: embedding model used by RAG/cache.
+- `F1_DEFAULT_MODEL`: default LLM model (default: `gemini-2.5-pro`).
 
 ### Retrieval
 
 - `F1_RAG_BACKEND`: `local`.
+- `F1_GOOGLE_SEARCH_ENABLED`: enable GoogleSearchTool (default: `true`).
 
 ### Optional Feature Flags
 
@@ -166,10 +174,11 @@ Session CRUD endpoints are also available (create, get, list, delete).
   `F1_GROUNDING_TIME_SENSITIVE_SOURCE`.
 - `F1_PREFLIGHT_TOKEN_CHECK_ENABLED`, `F1_PREFLIGHT_TOKEN_THRESHOLD`,
   `F1_PREFLIGHT_TOKEN_HARD_LIMIT`.
+- `F1_TOOL_METRICS_EXPORT_ENABLED`, `F1_TOOL_METRICS_PROJECT_ID`.
 
 ### Resilience and Cache
 
-- LLM retry: `F1_LLM_RETRY_*`
+- LLM retry: `F1_LLM_RETRY_*` (`ENABLED`, `ATTEMPTS`, `INITIAL_DELAY_S`, `EXP_BASE`, `MAX_DELAY_S`, `JITTER`)
 - Tool retry/circuit breaker: `F1_RETRY_*`, `F1_CIRCUIT_*`
 - Semantic cache tuning: `F1_SEMANTIC_CACHE_*`
 

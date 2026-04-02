@@ -72,15 +72,27 @@ make dev
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `GOOGLE_GENAI_USE_VERTEXAI` | No | `FALSE` | Keep runtime on Gemini API key mode (no Vertex routing) |
+| **Core** | | | |
 | `GOOGLE_API_KEY` | Yes | — | Gemini API key for LLM and embeddings |
 | `GEMINI_EMBEDDING_MODEL` | No | `models/gemini-embedding-2-preview` | Embedding model for RAG and cache |
+| `F1_DEFAULT_MODEL` | No | `gemini-2.5-pro` | Default LLM model for the agent |
+| **Retrieval** | | | |
 | `F1_RAG_BACKEND` | No | `local` | Regulations retrieval backend (local-only) |
-| `F1_TOOL_METRICS_EXPORT_ENABLED` | No | `false` | Export tool validation errors as custom Cloud Monitoring metric |
-| `F1_TOOL_METRICS_PROJECT_ID` | No | — | Project id used when exporting tool validation metrics (fallback: `GOOGLE_CLOUD_PROJECT`) |
+| `F1_GOOGLE_SEARCH_ENABLED` | No | `true` | Enable GoogleSearchTool for web queries |
+| **Grounding** | | | |
 | `F1_GROUNDING_POLICY_ENABLED` | No | `true` | Enables grounding policy callback for factual-critical routes |
 | `F1_GROUNDING_POLICY_MODE` | No | `observe` | Grounding validation mode: `observe` (log only) or `enforce` (fallback on missing evidence) |
 | `F1_GROUNDING_TIME_SENSITIVE_SOURCE` | No | `google` | Source used for time-sensitive grounding policy (Phase 1 currently supports `google`) |
+| **Structured Responses** | | | |
+| `F1_STRUCTURED_RESPONSE_ENABLED` | No | `false` | Enable structured response contracts and schema validation |
+| **Token Preflight** | | | |
+| `F1_PREFLIGHT_TOKEN_CHECK_ENABLED` | No | `false` | Enable token budget guard before LLM calls |
+| `F1_PREFLIGHT_TOKEN_THRESHOLD` | No | — | Soft token threshold for progressive context truncation |
+| `F1_PREFLIGHT_TOKEN_HARD_LIMIT` | No | — | Hard token limit; request is blocked if exceeded |
+| **Observability** | | | |
+| `F1_TOOL_METRICS_EXPORT_ENABLED` | No | `false` | Export tool validation errors as custom Cloud Monitoring metric |
+| `F1_TOOL_METRICS_PROJECT_ID` | No | — | Project id used when exporting tool validation metrics (fallback: `GOOGLE_CLOUD_PROJECT`) |
+| **Semantic Cache** | | | |
 | `F1_SEMANTIC_CACHE_SIMILARITY_THRESHOLD` | No | `0.92` | Minimum cosine similarity (via normalized inner product) for cache hit |
 | `F1_SEMANTIC_CACHE_TOP_K` | No | `8` | ANN candidate count per cache lookup |
 | `F1_SEMANTIC_CACHE_HNSW_M` | No | `32` | HNSW graph degree parameter |
@@ -88,6 +100,13 @@ make dev
 | `F1_SEMANTIC_CACHE_SWEEP_INTERVAL_S` | No | `600` | Periodic sweep interval (seconds) for expiry/pruning |
 | `F1_SEMANTIC_CACHE_SWEEP_EVERY_OPS` | No | `500` | Operation-count trigger for expiry/pruning sweep |
 | `F1_SEMANTIC_CACHE_MAX_ENTRIES` | No | `50000` | Max rows in semantic cache before low-priority pruning |
+| **LLM Resilience** | | | |
+| `F1_LLM_RETRY_ENABLED` | No | `true` | Enable LLM retry with exponential backoff |
+| `F1_LLM_RETRY_ATTEMPTS` | No | `3` | Max retry attempts for LLM calls |
+| `F1_LLM_RETRY_INITIAL_DELAY_S` | No | `1.0` | Initial delay (seconds) before first retry |
+| `F1_LLM_RETRY_EXP_BASE` | No | `2.0` | Exponential backoff base |
+| `F1_LLM_RETRY_MAX_DELAY_S` | No | `8.0` | Maximum delay cap (seconds) |
+| `F1_LLM_RETRY_JITTER` | No | `0.35` | Jitter factor for retry delays |
 
 ## Generated Artifacts
 
@@ -113,17 +132,17 @@ Before model:
   4. route_model      — Route to Flash (simple) or Pro (complex)          (cb_model_routing)
   5. apply_grounding_policy — Attach grounding policy                     (cb_grounding)
   6. apply_response_contract — Attach response schema                     (cb_response_validation)
-  7. preflight_token_check — Token budget guard                           (callbacks — inline)
+  7. preflight_token_check — Token budget guard                           (token_preflight)
 
 After model:
-  8. log_context_cache_metrics — Context cache hit/miss logging           (callbacks — inline)
-  9. validate_structured_response — Schema validation                     (cb_response_validation)
+  8.  log_context_cache_metrics — Context cache hit/miss logging          (callbacks — inline)
+  9.  validate_structured_response — Schema validation                    (cb_response_validation)
   10. validate_grounding_outcome — Grounding evidence check               (cb_grounding)
   11. detect_corrections — Detect if the user corrected the agent         (cb_corrections)
   12. store_cache      — Cache the answer (TTL: 30d static, 24h live)     (cb_semantic_cache)
 
 On error:
-  13. handle_rate_limit — User-friendly fallback after retry exhaustion (429/503)
+  13. handle_rate_limit — Pro quota exhaustion → Flash fallback; 429/503 → user-friendly message (agent.py)
 
 Runtime resilience layer:
   - LLM runtime retries via Gemini `HttpRetryOptions` (exponential backoff + jitter)
@@ -216,18 +235,25 @@ uv run python -m unittest tests.test_model_routing -v
 
 | Module | Tests | Coverage |
 |--------|-------|----------|
-| `test_sql_templates.py` | 12 | Template resolution, defaults, escaping, validation |
-| `test_model_routing.py` | 14 | Complexity classification, user text extraction, routing |
-| `test_semantic_cache.py` | 6 | Put/get, TTL, hit counts, clearing |
-| `test_corrections.py` | 11 | Detection (PT/EN), storage, injection, cap |
-| `test_hybrid_search.py` | 8 | Tokenization, article extraction |
 | `test_agent_tool_contract.py` | 4 | Tool registration, prompt loading |
-| `test_model_error_callback.py` | 4 | Rate limit handling (429/503) |
 | `test_artifact_path_resolution.py` | 4 | Flat vs nested artifact layouts |
-| `test_temporal_context.py` | 20+ | Dynamic year injection, temporal resolution and cache bypass |
-| `test_sessions_contract.py` | 9 | Anonymous identity, TTL helpers, session service selection |
+| `test_corrections.py` | 11 | Detection (PT/EN), storage, injection, cap |
+| `test_db.py` | 4 | Database connection, table existence |
+| `test_grounding_policy.py` | 5 | Grounding policy enforcement |
+| `test_hybrid_search.py` | 8 | Tokenization, article extraction, BM25 |
+| `test_model_error_callback.py` | 4 | Rate limit handling (429/503), Pro quota fallback |
+| `test_model_routing.py` | 14 | Complexity classification, user text extraction, routing |
 | `test_rag_backend.py` | 2 | Local RAG backend selection behavior |
+| `test_resilience.py` | 6 | Retry logic, circuit breaker state transitions |
+| `test_response_contract.py` | 8 | Contract validation, schema enforcement |
 | `test_season_info.py` | 4 | Current season info: completed/upcoming races, pre-season, API unavailable |
+| `test_semantic_cache.py` | 6 | Put/get, TTL, hit counts, clearing |
+| `test_sessions_contract.py` | 9 | Anonymous identity, TTL helpers, session service selection |
+| `test_sql_templates.py` | 12 | Template resolution, defaults, escaping, validation |
+| `test_temporal_context.py` | 20+ | Dynamic year injection, temporal resolution and cache bypass |
+| `test_token_preflight.py` | 14 | Token counting, progressive context truncation |
+| `test_tool_argument_validation.py` | 5 | Input validation, error handling for tool arguments |
+| `test_tool_metrics.py` | 3 | Metrics export behavior, fail-open design |
 
 ## Linting
 
@@ -263,14 +289,14 @@ The cache and RAG embedding paths both follow `GEMINI_EMBEDDING_MODEL`.
 
 | File | Purpose |
 |------|---------|
-| `f1_agent/agent.py` | Agent definition — model, tools, callbacks, instruction loading |
+| `f1_agent/agent.py` | Agent definition — model, tools, callbacks, instruction loading, rate-limit error handler |
 | `f1_agent/runner.py` | Runner setup with in-memory sessions |
 | `f1_agent/sessions.py` | Session identity normalization (`user_id`, `session_id`, `client_id`) and TTL helpers |
 | **Callbacks** | |
 | `f1_agent/callbacks.py` | Facade — re-exports all callbacks from `cb_*` submodules |
-| `f1_agent/cb_helpers.py` | Shared callback utilities (`_extract_user_text`, `_current_year`, etc.) |
-| `f1_agent/cb_model_routing.py` | Model routing (`route_model`) |
-| `f1_agent/cb_temporal.py` | Temporal context injection and relative-time resolution |
+| `f1_agent/cb_helpers.py` | Shared callback utilities (`_extract_user_text`, `_current_year`, `_current_date`, `_DB_MAX_YEAR`) |
+| `f1_agent/cb_model_routing.py` | Model routing (`route_model`), Pro quota exhaustion tracking |
+| `f1_agent/cb_temporal.py` | Temporal context injection, relative-time resolution, cache query classification |
 | `f1_agent/cb_semantic_cache.py` | Semantic cache callbacks (`check_cache`, `store_cache`) |
 | `f1_agent/cb_corrections.py` | Session corrections detection and injection |
 | `f1_agent/cb_grounding.py` | Grounding policy (`observe`/`enforce` mode) |
@@ -283,9 +309,13 @@ The cache and RAG embedding paths both follow `GEMINI_EMBEDDING_MODEL`.
 | `f1_agent/tools_jolpica.py` | `get_current_season_info`, `search_recent_results` |
 | **Infrastructure** | |
 | `f1_agent/cache.py` | Semantic answer cache (FAISS + SQLite with TTL) |
-| `f1_agent/env_utils.py` | Environment helpers (`env_bool`, `env_int`, `get_package_dir`) |
+| `f1_agent/env_utils.py` | Environment helpers (`env_bool`, `env_int`, `env_float`, `get_package_dir`) |
 | `f1_agent/rag.py` | RAG pipeline: PDF loading, article-aware chunking, FAISS + BM25 hybrid search |
 | `f1_agent/db.py` | SQLite DB: schema builder (from Kaggle CSVs), read-only query execution |
 | `f1_agent/sql_templates.py` | 15 parameterized SQL templates for common F1 queries |
+| `f1_agent/resilience.py` | Retry/backoff + circuit breaker utilities for LLM and tool calls |
+| `f1_agent/response_contract.py` | Response contract definitions (`sources_block_v1`, `comparison_table_v1`) |
+| `f1_agent/token_preflight.py` | Token preflight check: CountTokens API, progressive context truncation |
+| `f1_agent/tool_metrics.py` | Cloud Monitoring export for tool validation errors (fail-open) |
 | `f1_agent/prompts/system_instruction_static.txt` | Externalized system prompt with few-shot examples |
 | `build_index.py` | Generates `vector_store/` and `f1_data/` from source data in `docs/` |
